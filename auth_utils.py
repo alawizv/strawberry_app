@@ -97,12 +97,6 @@ def show_flash():
 
 def go_home_logout():
     st.session_state.user = None
-    for page in ("Dashboard.py", "app.py"):
-        try:
-            st.switch_page(page)
-            return
-        except Exception:
-            continue
     st.rerun()
 
 
@@ -120,10 +114,6 @@ def show_user_sidebar():
         st.divider()
         theme_toggle(key="theme_mode_radio")
         st.divider()
-        if st.button("Profil", key="profile_page", use_container_width=True):
-            try:
-                st.switch_page("pages/12_🔐_Profil.py")
-            except Exception:
-                pass
+        st.page_link("pages/12_🔐_Profil.py", label="🔐 Profil", use_container_width=True)
         if st.button("Logout", key="logout_page", use_container_width=True):
             go_home_logout()
