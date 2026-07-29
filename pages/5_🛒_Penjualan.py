@@ -1,13 +1,14 @@
-"""Modul Penjualan — multi-item, diskon auto, edit order, invoice PDF."""
+"""Modul Penjualan — multi-item, diskon auto, edit order, invoice PDF + WhatsApp."""
 import json
 import io
+import urllib.parse
 from datetime import date, datetime
 
 import streamlit as st
 
 from auth_utils import require_login, show_user_sidebar, flash_success, flash_error
 from database import (
-    get_db, Sale, SaleItem, Product, Customer, format_rp,
+    get_db, Sale, SaleItem, Product, Customer, Setting, format_rp,
     InventoryMovement, SaleStatus, ShippingMethod, MovementType,
     get_current_stock, Expense, write_log, generate_invoice_number,
 )
@@ -204,8 +205,84 @@ try:
                     write_log(db, user, "sale.create", f"Order #{sale.id} {cust.name} {format_rp(total)} ({status_choice})",
                         entity_type="sale", entity_id=sale.id, detail=str([(p.name, q, pr) for p, q, pr, _ in items_calc]))
                     db.commit()
+
+                    # Build items text for WA
+                    items_text = "\n".join(
+                        f"• {prod.name}: {qty:g} kg × {format_rp(price)} = {format_rp(line_sub)}"
+                        for prod, qty, price, line_sub in items_calc
+                    )
+                    # Store in session for WA popup
+                    st.session_state.wa_sale = {
+                        "id": sale.id,
+                        "invoice": sale.invoice_number or f"INV-{sale.id}",
+                        "customer_name": cust.name,
+                        "customer_phone": cust.phone or "",
+                        "items_text": items_text,
+                        "total": format_rp(total),
+                        "ongkir": format_rp(ship_cost),
+                        "diskon": format_rp(disc_amt),
+                        "tanggal": str(sale_date),
+                        "catatan": notes or "-",
+                    }
                     st.session_state.sale_lines = [{"product_id": products[0].id, "qty": 1.0, "price": float(products[0].base_price)}]
-                    flash_success(f"✅ Order #{sale.id} tersimpan · {format_rp(total)} ({status_choice})")
+                    st.rerun()
+
+        # ── WhatsApp popup after order ──
+        if st.session_state.get("wa_sale"):
+            ws = st.session_state.wa_sale
+            st.divider()
+            bg = "#1a2332" if is_dark() else "#f0fdf4"
+            bd = "#22c55e" if is_dark() else "#16a34a"
+            tx = "#e6edf3" if is_dark() else "#14532d"
+            st.markdown(f"""
+            <div style="background:{bg};border:2px solid {bd};border-radius:16px;padding:20px;margin:12px 0;color:{tx};">
+              <div style="font-size:1.3rem;font-weight:700;">✅ Order #{ws['id']} Tersimpan!</div>
+              <div style="margin-top:8px;">
+                <b>Pelanggan:</b> {ws['customer_name']}<br>
+                <b>Invoice:</b> {ws['invoice']}<br>
+                <b>Total:</b> {ws['total']}<br>
+                <b>Telepon:</b> {ws['customer_phone'] or '❌ Tidak ada nomor'}
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            col_wa, col_done = st.columns(2)
+            with col_wa:
+                # Load WA template
+                wa_tpl_setting = db.query(Setting).filter_by(key="wa_template").first()
+                default_tpl = "Halo {nama_pelanggan},\n\nBerikut pesanan Anda:\n\n{items}\n\nTotal: {total}\nOngkir: {ongkir}\nDiskon: {diskon}\n\nInvoice: {invoice}\nTanggal: {tanggal}\n\nTerima kasih 🍓"
+                tpl = wa_tpl_setting.value if wa_tpl_setting else default_tpl
+
+                # Build message
+                wa_msg = tpl.format(
+                    nama_pelanggan=ws["customer_name"],
+                    invoice=ws["invoice"],
+                    tanggal=ws["tanggal"],
+                    items=ws["items_text"],
+                    total=ws["total"],
+                    ongkir=ws["ongkir"],
+                    diskon=ws["diskon"],
+                    catatan=ws["catatan"],
+                )
+
+                phone = ws["customer_phone"].strip().replace("+", "").replace("-", "").replace(" ", "")
+                if not phone.startswith("62") and phone.startswith("0"):
+                    phone = "62" + phone[1:]
+                encoded_msg = urllib.parse.quote(wa_msg)
+                wa_url = f"https://wa.me/{phone}?text={encoded_msg}" if phone else None
+
+                if wa_url:
+                    st.link_button("📱 KIRIM WHATSAPP", wa_url, use_container_width=True, type="primary")
+                    with st.expander("👀 Preview Pesan"):
+                        st.code(wa_msg, language=None)
+                else:
+                    st.warning("Nomor telepon pelanggan kosong. Tidak bisa kirim WhatsApp.")
+                    st.caption("Edit pelanggan dulu untuk tambahkan nomor telepon.")
+
+            with col_done:
+                if st.button("✅ Selesai", use_container_width=True, type="secondary"):
+                    del st.session_state.wa_sale
+                    flash_success(f"Order #{ws['id']} selesai.")
                     st.rerun()
 
     with tab_list:

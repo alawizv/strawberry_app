@@ -258,12 +258,21 @@ try:
     with t_set:
         company = db.query(Setting).filter_by(key="company_name").first()
         tol = db.query(Setting).filter_by(key="tolerance_kg").first()
+        wa_tpl = db.query(Setting).filter_by(key="wa_template").first()
         st.info("**Toleransi balance** = selisih maksimal (kg) antara total timbang vs total sortir.")
         with st.form("settings"):
             cname = st.text_input("Nama perusahaan", value=company.value if company else "Strawberry Fresh Supply")
             tolerance = st.number_input("Toleransi balance (kg)", min_value=0.0,
                 value=float(tol.value) if tol else 0.15, step=0.05, format="%.2f")
             st.caption(f"Preview: sorter boleh selisih maksimal **±{float(tolerance):g} kg**")
+
+            st.divider()
+            st.subheader("📱 Template WhatsApp")
+            st.caption("Variabel: {nama_pelanggan}, {invoice}, {tanggal}, {items}, {total}, {ongkir}, {diskon}, {catatan}")
+            default_tpl = "Halo {nama_pelanggan},\n\nBerikut pesanan Anda:\n\n{items}\n\nTotal: {total}\nOngkir: {ongkir}\nDiskon: {diskon}\n\nInvoice: {invoice}\nTanggal: {tanggal}\n\nTerima kasih 🍓"
+            wa_val = st.text_area("Template pesan WA", value=wa_tpl.value if wa_tpl else default_tpl, height=200,
+                help="Pesan ini akan dikirim ke pelanggan via WhatsApp setelah order dibuat.")
+
             if st.form_submit_button("Simpan Pengaturan", type="primary"):
                 if company:
                     company.value = cname
@@ -273,7 +282,11 @@ try:
                     tol.value = str(tolerance)
                 else:
                     db.add(Setting(key="tolerance_kg", value=str(tolerance)))
-                write_log(db, user, "settings.update", f"Update pengaturan: toleransi ±{float(tolerance):g}kg", entity_type="setting")
+                if wa_tpl:
+                    wa_tpl.value = wa_val
+                else:
+                    db.add(Setting(key="wa_template", value=wa_val))
+                write_log(db, user, "settings.update", f"Update pengaturan: toleransi ±{float(tolerance):g}kg + template WA", entity_type="setting")
                 db.commit()
                 flash_success(f"Pengaturan disimpan. Toleransi: ±{float(tolerance):g} kg")
                 st.rerun()
