@@ -48,7 +48,6 @@ def login_page():
     )
     col1, col2, col3 = st.columns([0.4, 1.4, 0.4])
     with col2:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.subheader("Login")
         with st.form("login_form"):
             username = st.text_input("Username", placeholder="owner")
@@ -71,7 +70,6 @@ def login_page():
                 finally:
                     db.close()
         st.caption("Demo: owner/owner123 · driver1/driver123 · sorter1/sorter123 · sales1/sales123")
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def logout():
