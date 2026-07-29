@@ -42,19 +42,32 @@ def theme_toggle(key: str = "theme_mode_radio"):
 def _persist_theme_js(mode: str):
     safe = "dark" if mode == "dark" else "light"
     bg = "#0b0f14" if safe == "dark" else "#f8fafc"
+    bg2 = "#12181f" if safe == "dark" else "#ffffff"
+    fg = "#f1f5f9" if safe == "dark" else "#0f172a"
+    sidebar_bg = "#0d1218" if safe == "dark" else "#fff1f2"
     components.html(
         f"""
         <script>
         try {{
           localStorage.setItem('strawberry_theme', '{safe}');
-          const bg = '{bg}';
           const root = window.parent.document;
           if (root) {{
             root.documentElement.setAttribute('data-strawberry-theme', '{safe}');
             const app = root.querySelector('.stApp') || root.body;
-            if (app) {{ app.style.backgroundColor = bg; app.style.color = '{safe}' === 'dark' ? '#f1f5f9' : '#0f172a'; }}
+            if (app) {{
+              app.style.backgroundColor = '{bg}';
+              app.style.color = '{fg}';
+              app.style.transition = 'background-color 0.15s ease, color 0.15s ease';
+            }}
             const main = root.querySelector('[data-testid="stAppViewContainer"]');
-            if (main) main.style.backgroundColor = bg;
+            if (main) main.style.backgroundColor = '{bg}';
+            const header = root.querySelector('[data-testid="stHeader"]');
+            if (header) header.style.background = '{bg2}';
+            const sidebar = root.querySelector('[data-testid="stSidebar"]');
+            if (sidebar) {{
+              sidebar.style.backgroundColor = '{sidebar_bg}';
+              sidebar.style.transition = 'background-color 0.15s ease';
+            }}
           }}
         }} catch (e) {{}}
         </script>
@@ -72,7 +85,11 @@ def _early_paint_js():
           try {
             const mode = localStorage.getItem('strawberry_theme') || 'light';
             const bg = mode === 'dark' ? '#0b0f14' : '#f8fafc';
+            const bg2 = mode === 'dark' ? '#12181f' : '#ffffff';
             const fg = mode === 'dark' ? '#f1f5f9' : '#0f172a';
+            const fg2 = mode === 'dark' ? '#94a3b8' : '#64748b';
+            const border = mode === 'dark' ? '#2a3441' : '#e2e8f0';
+            const sidebarBg = mode === 'dark' ? '#0d1218' : '#fff1f2';
             const root = window.parent.document;
             if (!root) return;
             root.documentElement.setAttribute('data-strawberry-theme', mode);
@@ -88,9 +105,29 @@ def _early_paint_js():
                 background-color: ${bg} !important;
                 color: ${fg} !important;
               }
+              [data-testid="stHeader"] { background: ${bg2} !important; }
+              section[data-testid="stSidebar"] { background: ${sidebarBg} !important; }
+              section[data-testid="stSidebar"] * { color: ${fg} !important; }
+              .stApp a, .stApp a span, .stApp a p,
+              .stApp button[data-baseweb="tab"],
+              .stApp [data-testid="stExpander"] summary,
+              .stApp [data-testid="stExpander"] summary span,
+              .stApp [data-testid="stExpander"] p,
+              .stApp .streamlit-expanderContent p,
+              .stApp .streamlit-expanderContent span,
+              .stApp .streamlit-expanderContent div,
+              .stApp [data-testid="stMarkdownContainer"] a,
+              .stApp [data-testid="stMarkdownContainer"] a span {
+                color: ${fg} !important;
+              }
+              .stApp .streamlit-expanderHeader:hover { background: ${bg2} !important; }
+              .stApp [data-testid="stCaption"], .stApp .stCaption,
+              .stApp small, .stApp .stMarkdown small { color: ${fg2} !important; }
             `;
             const app = root.querySelector('.stApp');
             if (app) { app.style.backgroundColor = bg; app.style.color = fg; }
+            const sidebar = root.querySelector('[data-testid="stSidebar"]');
+            if (sidebar) { sidebar.style.backgroundColor = sidebarBg; }
           } catch (e) {}
         })();
         </script>
@@ -372,8 +409,21 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
 }}
 .stApp [data-testid="stExpander"] summary,
 .stApp [data-testid="stExpander"] summary span,
-.stApp [data-testid="stExpander"] p {{
+.stApp [data-testid="stExpander"] summary p,
+.stApp [data-testid="stExpander"] p,
+.stApp .streamlit-expanderHeader,
+.stApp .streamlit-expanderHeader span,
+.stApp .streamlit-expanderHeader p {{
     color: {p["text"]} !important;
+}}
+.stApp .streamlit-expanderContent,
+.stApp .streamlit-expanderContent p,
+.stApp .streamlit-expanderContent span,
+.stApp .streamlit-expanderContent div {{
+    color: {p["text"]} !important;
+}}
+.stApp .streamlit-expanderHeader:hover {{
+    background: {p["bg2"]} !important;
 }}
 .stApp div[data-testid="stVerticalBlockBorderWrapper"] {{
     background: {p["card"]} !important;
@@ -400,6 +450,22 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
     color: {p["text"]} !important;
 }}
 /* glamor / glide data grid cells often use canvas — border only */
+/* DataFrame show more/less and toolbar */
+.stApp [data-testid="stDataFrame"] button,
+.stApp [data-testid="stDataFrameResizable"] button,
+.stApp [data-testid="stDataFrame"] [role="button"],
+.stApp [data-testid="stDataFrameResizable"] [role="button"] {{
+    color: {p["text"]} !important;
+    background: {p["secondary_btn_bg"]} !important;
+    border-color: {p["border"]} !important;
+}}
+/* Arrow / chevron icons in expanders and show-more */
+.stApp svg[stroke],
+.stApp [data-testid="stExpander"] svg,
+.stApp .streamlit-expanderHeader svg {{
+    fill: {p["text"]} !important;
+    stroke: {p["text"]} !important;
+}}
 
 /* ========== Alerts ========== */
 .stApp div[data-testid="stAlert"] {{
@@ -438,6 +504,28 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
 
 /* ========== Links ========== */
 .stApp a {{ color: {p["primary"]} !important; }}
+/* View more/less and show/hide links */
+.stApp a.streamlit-expanderHeader,
+.stApp .streamlit-expanderHeader a,
+.stApp [data-testid="stMarkdownContainer"] a,
+.stApp [data-testid="stMarkdownContainer"] a span,
+.stApp .stMarkdown a,
+.stApp .stMarkdown a span {{
+    color: {p["primary"]} !important;
+    text-decoration-color: {p["primary"]} !important;
+}}
+/* Generic "show more", "view more", "less" text */
+.stApp span[style*="cursor: pointer"],
+.stApp div[role="button"] span {{
+    color: {p["text"]} !important;
+}}
+/* Smooth page transitions — reduce flash */
+.stApp {{
+    transition: background-color 0.15s ease, color 0.15s ease;
+}}
+section[data-testid="stSidebar"] {{
+    transition: background-color 0.15s ease;
+}}
 
 /* ========== Custom classes ========== */
 .main-header {{
