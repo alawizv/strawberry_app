@@ -1,6 +1,5 @@
-"""Panduan operasional + FAQ sesuai aturan aplikasi saat ini."""
+"""Panduan operasional + FAQ — dokumentasi lengkap semua fitur."""
 import streamlit as st
-
 from auth_utils import require_login, show_user_sidebar
 
 st.set_page_config(page_title="Panduan & FAQ", page_icon="📖", layout="wide")
@@ -8,138 +7,188 @@ user = require_login(["owner", "admin", "driver", "sorter", "sales"])
 show_user_sidebar()
 
 st.markdown("## 📖 Panduan & FAQ")
-st.caption("Dokumentasi operasional yang selaras dengan aturan aplikasi saat ini")
+st.caption("Dokumentasi operasional lengkap — semua fitur terbaru")
 
 tab_guide, tab_roles, tab_flow, tab_faq = st.tabs([
-    "Panduan Modul",
-    "Hak Akses Role",
-    "Alur Kerja",
-    "FAQ",
+    "Panduan Modul", "Hak Akses Role", "Alur Kerja", "FAQ",
 ])
 
 with tab_guide:
     st.subheader("1. Login & Dashboard")
     st.markdown("""
 - Login di halaman **Dashboard**. Session user disimpan di browser session Streamlit.
-- **Tema Light / Dark** di sidebar (bisa diganti kapan saja; preferensi per sesi browser).
-- UI **responsif**: mobile (tombol full-width, tab scroll, padding rapat), tablet, desktop.
-- **Dashboard Owner** interaktif: filter tanggal, filter kebun, KPI, grafik omzet/stok/yield,
-  breakdown % sortir, antrean approve, snapshot keuangan.
-- Role non-owner melihat ringkasan operasional (tanpa panel approve).
-- Setelah aksi sukses: **toast + banner hijau + balloons** (feedback wajib).
+- **Dashboard berbeda per role:**
+  - **Owner/Admin**: KPI lengkap, filter tanggal & kebun, charts omzet/stok/yield, antrean approve, snapshot keuangan, breakdown sortir %, retur pending.
+  - **Driver**: pickup hari ini, ringkasan pickup, quick link ke Pengambilan.
+  - **Sorter**: antrean SJ pending, penerimaan hari ini, level stok, quick link ke Penerimaan.
+  - **Sales**: omzet hari ini/bulan, top produk, stok tersedia, order terbaru, quick link ke Penjualan.
+- **Tema Light / Dark** di sidebar. Preferensi per sesi browser.
+- Setelah aksi sukses: **toast + banner hijau + balloons**.
     """)
 
     st.subheader("2. Pengambilan (Driver / Owner)")
     st.markdown("""
-- Form ringkas: **Tanggal** + tray **RED HARVEST 1** + tray **RED HARVEST 2** + TOTAL tray.
-- 1 submit dapat membuat **hingga 2 SJ** otomatis (jika tray > 0 per kebun).
-- Format No. SJ: `DDMMYYYY` + kode kebun (`RH1` / `RH2`), contoh `29072026RH1`.
-- **Aturan 1 kebun / 1 hari**: jika kebun sudah punya pickup (bukan cancelled) di tanggal itu,
-  field tray **dikunci** — tidak bisa input lagi.
-- Driver **tidak bisa edit** data tersimpan. Koreksi lewat **Permintaan Koreksi** → Owner approve/tolak.
-- Owner dapat batalkan pickup pending; semua tercatat di **Log Aktivitas**.
+- Multi-kebun sekarang **dinamis** dari Master Data → Kebun (bukan hardcode 2).
+- Form: **Tanggal** + tray per kebun + TOTAL tray.
+- 1 submit bisa membuat **beberapa SJ** sekaligus (satu per kebun dengan tray > 0).
+- Format No. SJ: `DDMMYYYY` + kode kebun (dari Master Data, misal `RH1` / `RH2`).
+- **Aturan 1 kebun / 1 hari**: jika kebun sudah ada pickup aktif, field tray **dikunci**.
+- **QR Code otomatis** setelah simpan:
+  - Download QR (PNG) per SJ.
+  - **Cetak SJ** (download HTML yang bisa diprint — ada QR, info kebun, tray, driver).
+  - QR berisi: nomor SJ, kode kebun, tanggal.
+- Driver **tidak bisa edit** → koreksi via **Permintaan Koreksi** → Owner approve.
     """)
 
     st.subheader("3. Penerimaan & Sortir (Sorter / Owner)")
     st.markdown("""
-- Daftar **hanya SJ pending yang belum diterima**. Yang sudah diterima hilang dari antrean, ada di **Riwayat**.
-- **1 SJ = 1 kali penerimaan** (anti double-submit + lock session + cek DB).
-- **Dicek oleh** otomatis dari akun login (tidak bisa diedit).
-- Input kg: desimal pakai **titik** (contoh `12.5`).
-- **Balance**: selisih |total timbang − total sortir| ≤ toleransi (default `0.15` kg).
-  - Hijau = balance OK · Merah = tidak balance.
-  - **Sorter** hanya boleh simpan jika balance.
-  - **Owner** boleh **override** tidak balance (konfirmasi + log `receiving.override`).
-- Toleransi diatur di **Master Data → Pengaturan**.
-- Simpan wajib **konfirmasi popup** sebelum commit.
-- Owner dapat **hapus riwayat** → rollback stok + pickup kembali pending + log.
+- **Scan QR** atau **ketik No. SJ** untuk cari Surat Jalan.
+- Sistem menampilkan info SJ (kebun, tray, driver, foto pickup).
+- Input total kg timbang + **upload foto timbangan** (opsional).
+- Sortir per kategori → cek balance (selisih ≤ toleransi).
+- **Owner** boleh override tidak balance.
+- Simpan wajib **konfirmasi** → stok masuk otomatis (in_sorting).
+- Owner dapat **hapus riwayat** → rollback stok + pickup kembali pending.
     """)
 
     st.subheader("4. Stok")
     st.markdown("""
-- Menampilkan stok real-time per kategori + **riwayat mutasi** (filter tipe / arah).
-- **Tipe mutasi:**
-  - `in_sorting` — masuk dari penerimaan/sortir (+)
-  - `out_sale` — keluar karena penjualan confirmed (−)
-  - `adjustment` — penyesuaian manual / rollback
-  - `in_return` — pengembalian stok saat order dibatalkan (+)
-- **Adjustment stok**:
-  - **Sorter** mengajukan → Owner approve/tolak.
-  - **Owner** boleh **langsung terapkan** (tanpa antrean) · tetap **wajib log**.
-  - Role lain (driver, sales) **tidak bisa**.
+- Stok real-time per kategori + riwayat mutasi (filter tipe / arah).
+- **Export CSV/Excel** riwayat mutasi.
+- **Tren yield %** — line chart per kategori dari waktu ke waktu.
+- **Tipe mutasi:** `in_sorting` (+), `out_sale` (−), `adjustment` (±), `in_return` (+).
+- **Adjustment**: Sorter ajukan → Owner approve. Owner bisa langsung terapkan.
+- Stok dicek agar tidak negatif saat adjustment.
     """)
 
     st.subheader("5. Produk")
     st.markdown("""
-- Tampilan kartu (2 kolom) + gambar opsional; detail di expander collapsible.
-- Harga display: `Rp. 37.000` · input ketik angka `37000`.
-- **Sales** membuat produk → status **pending** (belum aktif dijual).
-- **Owner** membuat produk → langsung **approved & aktif**.
-- Owner approve/tolak di tab **Approve Produk**.
-- Penjualan hanya memakai produk `is_active` + `approval_status=approved`.
+- Tampilan kartu (2 kolom) + gambar opsional.
+- **Sales** buat → status **pending** → Owner approve.
+- **Owner** buat → langsung **approved & aktif**.
+- Harga: tampil `Rp. 37.000`, input ketik `37000`.
+- Edit produk (harga, gambar, status aktif) di kartu produk.
     """)
 
     st.subheader("6. Penjualan")
     st.markdown("""
-- Cari pelanggan ketik nama; jika tidak ketemu → **New Customer**.
-- **Multi-item**: tambah baris, produk beda, qty beda, harga custom per baris.
-- **Diskon % dihilangkan** (sementara). Hanya **diskon nominal (Rp)** di atas tombol simpan.
-- Subtotal/total **live** (update saat qty/produk/harga/ongkir berubah).
-- Total = (Σ qty×harga) − diskon nominal + ongkir (tidak negatif setelah diskon).
-- Status `confirmed` memotong **stok bahan per kategori** sesuai **resep produk** (bukan stok “produk jadi”).
-  Contoh: jual 10 kg Mix 50% Jumbo + 50% AB → stok JUMBO −5 kg, AB MIX −5 kg.
-- Cek stok cukup per kategori sebelum konfirmasi.
+- Cari pelanggan → ketik nama → pilih atau buat baru (**cek duplikat**).
+- **Diskon otomatis** dari data pelanggan (`default_discount_pct`). Bisa diubah manual.
+- **Multi-item**: tambah baris, beda produk/qty/harga per baris.
+- Total **live** (update saat widget berubah).
+- Status `confirmed` → potong **stok bahan per kategori** sesuai **resep produk**.
+- **Edit order** (draft/confirmed): ubah tanggal, ongkir, diskon, catatan. Semua tercatat di log.
+- **Invoice PDF**: download nota penjualan per order (format A5, ada detail item & total).
 - Metode kirim: GO SEND, Paxel, Kurir Sendiri, Mobil Box Sewa.
     """)
 
-    st.subheader("7. Keuangan, Master Data, Laporan, Log")
+    st.subheader("7. Retur / Pengembalian (BARU)")
     st.markdown("""
-- **Keuangan**: omzet penjualan vs pengeluaran (owner).
-- **Master Data**: kategori, user, pelanggan, nama perusahaan, **toleransi balance**.
-- **Laporan**: filter periode, stok, yield, performa driver/sales, top produk.
-- **Log Aktivitas** (owner): audit trail multi-owner.
-  - **Ringkasan** = kalimat manusia.
-  - **Detail** = payload teknis (JSON/qty/field) untuk audit, bukan aksi terpisah.
+- Sales/Owner bisa **ajukan retur** untuk order yang sudah confirmed/shipped/delivered.
+- Pilih order → isi qty per kategori → alasan retur.
+- **Owner** approve → stok dikembalikan otomatis (`in_return`).
+- **Sales** mengajukan → menunggu approve owner.
+- Partial return: bisa per kategori, tidak harus full order.
+    """)
+
+    st.subheader("8. Keuangan")
+    st.markdown("""
+- Omzet penjualan vs pengeluaran operasional.
+- **Filter tanggal** untuk semua data.
+- **Export CSV/Excel** pemasukan dan pengeluaran.
+- Semua pengeluaran tercatat di **Log Aktivitas**.
+- Owner bisa **hapus pengeluaran** (tercatat di log).
+- Kategori pengeluaran: shipping, labor, packaging, fuel, farm, other.
+    """)
+
+    st.subheader("9. Master Data")
+    st.markdown("""
+- **Full CRUD** sekarang (tambah, edit, nonaktifkan):
+  - **Kategori** — edit nama, deskripsi, warna, urutan.
+  - **Kebun (BARU)** — dinamis! Tambah/edit/nonaktifkan kebun. Kode kebun untuk SJ.
+  - **User** — edit nama, role, telepon, status aktif, reset password.
+  - **Pelanggan** — edit semua field termasuk diskon default %.
+- **Hak Akses (BARU)** — atur permission per role per modul (view/create/edit/delete/approve).
+- **Pengaturan** — nama perusahaan, toleransi balance.
+- **Backup Database** — download file .db (SQLite).
+    """)
+
+    st.subheader("10. Barcode & QR (BARU)")
+    st.markdown("""
+- **Driver**: setelah simpan pickup, QR code otomatis di-generate.
+  - Download QR (file PNG).
+  - Cetak SJ (HTML) — ada QR + info lengkap.
+- **Sorter**: scan QR di halaman Penerimaan (atau ketik manual).
+  - Sistem otomatis menemukan SJ dan menampilkan info.
+- QR berisi: `SJ:nomor|FARM:kode|DATE:tanggal`.
+- Bisa discan dengan HP biasa (camera app) atau input manual.
+    """)
+
+    st.subheader("11. Profil (BARU)")
+    st.markdown("""
+- Semua user bisa **ganti password sendiri** di halaman Profil.
+- Akses dari sidebar → tombol **Profil**.
+- Password lama wajib diverifikasi sebelum ganti.
+    """)
+
+    st.subheader("12. Laporan")
+    st.markdown("""
+- Filter periode, stok, yield %, performa driver/sales, top produk.
+- **Tren yield %** — line chart per kategori.
+- **Top pelanggan** — ranking berdasarkan omzet.
+- **Perbandingan kebun** — tray, kg, efisiensi kg/tray.
+- **Export CSV/Excel** data penjualan.
+    """)
+
+    st.subheader("13. Log Aktivitas")
+    st.markdown("""
+- **Audit trail** permanen — semua proses tercatat.
+- **Audit Diff (BARU)** — sekarang menampilkan perubahan **before/after** yang readable.
+  - Field yang berubah ditandai 🔴 merah.
+  - Diff format: `field: 'lama' → 'baru'`.
+- Filter: action, user, tanggal.
+- **Export CSV/Excel** log.
+- Log **tidak bisa dihapus** (audit multi-owner).
     """)
 
 with tab_roles:
-    st.subheader("Matriks role")
+    st.subheader("Matriks role default")
     st.dataframe([
-        {"Modul": "Dashboard", "Owner": "Penuh + filter + antrean", "Driver": "Ringkas", "Sorter": "Ringkas", "Sales": "Ringkas"},
-        {"Modul": "Pengambilan", "Owner": "Ya + batalkan + approve koreksi", "Driver": "Buat + minta koreksi", "Sorter": "—", "Sales": "—"},
-        {"Modul": "Penerimaan", "Owner": "Ya + override + hapus riwayat", "Driver": "—", "Sorter": "Ya (wajib balance)", "Sales": "—"},
-        {"Modul": "Stok lihat", "Owner": "Ya", "Driver": "Ya", "Sorter": "Ya", "Sales": "Ya"},
-        {"Modul": "Adjustment stok", "Owner": "Langsung + approve", "Driver": "Tidak", "Sorter": "Ajukan saja", "Sales": "Tidak"},
-        {"Modul": "Edit/hapus pickup", "Owner": "Langsung + log", "Driver": "Minta koreksi", "Sorter": "—", "Sales": "—"},
-        {"Modul": "Produk", "Owner": "CRUD + approve", "Driver": "—", "Sorter": "—", "Sales": "Ajukan (pending)"},
-        {"Modul": "Penjualan", "Owner": "Ya", "Driver": "—", "Sorter": "—", "Sales": "Ya"},
-        {"Modul": "Keuangan", "Owner": "Ya", "Driver": "—", "Sorter": "—", "Sales": "—"},
-        {"Modul": "Master Data", "Owner": "Ya", "Driver": "—", "Sorter": "—", "Sales": "—"},
-        {"Modul": "Laporan", "Owner": "Ya", "Driver": "—", "Sorter": "—", "Sales": "Ya"},
-        {"Modul": "Log / Panduan", "Owner": "Ya", "Driver": "Panduan", "Sorter": "Panduan", "Sales": "Panduan"},
+        {"Modul": "Dashboard", "Owner": "Penuh + filter + approve", "Driver": "Ringkas", "Sorter": "Ringkas", "Sales": "Ringkas"},
+        {"Modul": "Pengambilan", "Owner": "Ya + edit + approve koreksi", "Driver": "Buat + QR + cetak SJ", "Sorter": "—", "Sales": "—"},
+        {"Modul": "Penerimaan", "Owner": "Ya + override + hapus", "Driver": "—", "Sorter": "Scan QR + timbang + foto", "Sales": "—"},
+        {"Modul": "Stok", "Owner": "Ya + adjustment langsung", "Driver": "Lihat", "Sorter": "Lihat + ajukan adj", "Sales": "Lihat"},
+        {"Modul": "Produk", "Owner": "CRUD + approve", "Driver": "—", "Sorter": "—", "Sales": "Ajukan"},
+        {"Modul": "Penjualan", "Owner": "Ya + edit order", "Driver": "—", "Sorter": "—", "Sales": "Ya"},
+        {"Modul": "Retur", "Owner": "Ya + approve", "Driver": "—", "Sorter": "—", "Sales": "Ajukan retur"},
+        {"Modul": "Keuangan", "Owner": "Ya + export", "Driver": "—", "Sorter": "—", "Sales": "—"},
+        {"Modul": "Master Data", "Owner": "Full CRUD + hak akses + backup", "Driver": "—", "Sorter": "—", "Sales": "—"},
+        {"Modul": "Laporan", "Owner": "Ya + export", "Driver": "—", "Sorter": "—", "Sales": "Ya"},
+        {"Modul": "Log", "Owner": "Ya + audit diff + export", "Driver": "—", "Sorter": "—", "Sales": "—"},
+        {"Modul": "Profil", "Owner": "Ganti password", "Driver": "Ganti password", "Sorter": "Ganti password", "Sales": "Ganti password"},
     ], use_container_width=True, hide_index=True)
 
     st.markdown("""
-**Prinsip persetujuan Owner (multi-owner / partner):**
-- Perubahan sensitif yang sudah disepakati: koreksi pickup, produk dari sales, adjustment stok,
-  override tidak balance, hapus riwayat penerimaan — **wajib lewat approve / aksi owner** dan **masuk log**.
-- Dua owner bisa berbagi akun role `owner` (disarankan 2 user role owner di Master Data).
+**Hak akses bisa dikustomisasi** di Master Data → tab Hak Akses.
+Owner/Admin selalu punya akses penuh ke semua modul.
     """)
 
 with tab_flow:
     st.subheader("Alur harian (happy path)")
     st.markdown("""
 ```
-Driver  →  Form 2 kebun (tray)  →  SJ auto  →  status pending
+Driver  →  Form kebun dinamis (tray)  →  SJ + QR auto  →  Download/Cetak QR
                 ↓
-Sorter  →  Pilih SJ pending  →  Timbang + Sortir  →  Balance?
+Sorter  →  Scan QR / ketik SJ  →  Timbang + foto + Sortir  →  Balance?
            ├─ Ya  → Konfirmasi → Stok masuk (in_sorting)
            └─ Tidak → Sorter stop / Owner override + log
                 ↓
-Sales   →  Cari/buat pelanggan  →  Multi-item order  →  draft/confirmed
-           confirmed → potong stok sesuai resep produk
+Sales   →  Cari/buat pelanggan (diskon auto)  →  Multi-item order  →  draft/confirmed
+           confirmed → potong stok sesuai resep  →  Download Invoice PDF
+           Bisa edit order  →  Bisa ajukan retur
                 ↓
-Owner   →  Dashboard, approve antrean, laporan, keuangan, log
+Owner   →  Dashboard (per role), approve antrean, laporan, keuangan,
+           master data CRUD, hak akses, backup DB, audit diff log
 ```
     """)
     st.subheader("Kebun & SJ")
@@ -149,163 +198,67 @@ Owner   →  Dashboard, approve antrean, laporan, keuangan, log
 | RED HARVEST 1 | RH1 | `29072026RH1` |
 | RED HARVEST 2 | RH2 | `29072026RH2` |
 
+- Kebun bisa ditambah di Master Data → Kebun.
 - Maksimal **1 pickup aktif per kebun per tanggal**.
 - Desimal kg selalu pakai **titik**, bukan koma.
     """)
 
 with tab_faq:
-    st.subheader("Tampilan & perangkat")
-    with st.expander("Bagaimana ganti Light / Dark mode?"):
-        st.markdown(
-            "Di **sidebar** pilih **☀️ Light** atau **🌙 Dark**. "
-            "Bisa diganti kapan saja (login & setelah login). Preferensi per sesi browser."
-        )
-    with st.expander("Apakah app responsif di HP?"):
-        st.markdown(
-            "Ya. Mobile: tombol full-width, tab bisa digeser horizontal, padding rapat, "
-            "kartu/metric menyesuaikan. Tablet & desktop: layout multi-kolom penuh."
-        )
+    st.subheader("Barcode & QR")
+    with st.expander("Bagaimana cara cetak Surat Jalan?"):
+        st.markdown("Setelah simpan pickup di halaman **Pengambilan**, QR + tombol **Cetak SJ (HTML)** otomatis muncul. Download HTML → buka di browser → Print (Ctrl+P).")
+    with st.expander("Bagaimana cara scan QR di penerimaan?"):
+        st.markdown("Di halaman **Penerimaan & Sortir**, pilih **Scan QR** → arahkan kamera HP ke QR code. Atau ketik nomor SJ manual di kolom input.")
+    with st.expander("QR tidak terbaca / error?"):
+        st.markdown("Ketik nomor SJ manual di kolom input (mode **Ketik No. SJ**). Format: `DDMMYYYYRH1`.")
 
     st.subheader("Pengambilan")
-    with st.expander("Kenapa field tray terkunci / tidak bisa input?"):
-        st.markdown(
-            "Kebun itu **sudah punya pickup** di tanggal yang sama (bukan cancelled). "
-            "Aturan sementara: **1 kebun = 1 angkut / hari**. Ganti tanggal, atau batalkan "
-            "(owner) / ajukan koreksi jika data salah."
-        )
-    with st.expander("Apakah 1 submit selalu buat 2 SJ?"):
-        st.markdown(
-            "Hanya untuk kebun dengan **tray > 0** dan **belum terdaftar** hari itu. "
-            "Tray 0 = tidak dibuat. Kebun terkunci = skip."
-        )
-    with st.expander("Driver salah input tray, bagaimana?"):
-        st.markdown(
-            "Driver **tidak edit langsung**. Buka **Permintaan Koreksi** → isi alasan → "
-            "Owner approve di tab Approve / halaman terkait."
-        )
+    with st.expander("Kenapa field tray terkunci?"):
+        st.markdown("Kebun itu **sudah ada pickup** di tanggal yang sama (bukan cancelled). Aturan: **1 kebun = 1 angkut / hari**.")
+    with st.expander("Bisa tambah kebun baru?"):
+        st.markdown("Ya! **Master Data → tab Kebun** → tambah kebun baru (nama + kode). Kebun langsung muncul di form Pengambilan.")
 
     st.subheader("Penerimaan & Sortir")
-    with st.expander("Di mana mengatur toleransi balance (0.15 kg)?"):
-        st.markdown(
-            "**Master Data → tab Pengaturan → Toleransi balance (kg)**. "
-            "Contoh `0.15` = ±150 gram. Naikkan jika selisih operasional wajar lebih besar."
-        )
-    with st.expander("Tidak balance — siapa boleh simpan?"):
-        st.markdown(
-            "**Sorter**: tidak boleh. **Owner**: boleh override dengan konfirmasi; tercatat log."
-        )
-    with st.expander("Kenapa SJ hilang dari list penerimaan?"):
-        st.markdown(
-            "Sudah diterima → status `received` → hanya di **Riwayat**. List proses murni pending."
-        )
-    with st.expander("Saya klik simpan berkali-kali, stok jadi berlipat?"):
-        st.markdown(
-            "Sudah dicegah: konfirmasi, session lock, cek receiving unik per pickup. "
-            "Jika data lama sempat dobel, owner **hapus riwayat** (rollback) atau adjustment lewat sorter+owner."
-        )
+    with st.expander("Di mana mengatur toleransi balance?"):
+        st.markdown("**Master Data → Pengaturan → Toleransi balance (kg)**. Default `0.15` kg (±150 gram).")
+    with st.expander("Sorter bisa upload foto?"):
+        st.markdown("Ya! Di halaman Penerimaan, ada **upload foto timbangan** setelah input total kg.")
 
-    st.subheader("Stok & Mutasi")
-    with st.expander("Tipe mutasi stok (kolom Type) ada apa saja?"):
-        st.markdown("""
-| Tipe (kode) | Arah | Kapan muncul |
-|-------------|------|----------------|
-| **`in_sorting`** | Masuk (+) | Penerimaan & sortir disimpan (balance/override) |
-| **`out_sale`** | Keluar (−) | Order penjualan status **`confirmed`** (potong stok per resep) |
-| **`adjustment`** | Masuk/keluar | Owner adjustment langsung, approve adjustment sorter, atau rollback hapus data |
-| **`in_return`** | Masuk (+) | Order confirmed dibatalkan → stok dikembalikan |
-
-**Qty kg:** angka positif = stok naik · negatif = stok turun.
-
-**Kenapa cuma kelihatan `in_sorting`?**  
-Mutasi lain baru muncul setelah ada aksi terkait. Contoh: penjualan masih **draft** → belum `out_sale`.  
-Adjustment belum pernah di-approve/diterapkan → belum ada baris `adjustment`.
-        """)
-    with st.expander("Siapa boleh adjustment stok?"):
-        st.markdown(
-            "**Sorter** mengajukan → Owner approve. "
-            "**Owner** boleh langsung terapkan tanpa approve (tetap masuk log). "
-            "Driver/Sales tidak bisa."
-        )
-    with st.expander("Sales/Driver bisa adjustment?"):
-        st.markdown("**Tidak.** Hanya lihat stok (jika punya akses halaman).")
-    with st.expander("Saat produk terjual, stok berkurang bagaimana?"):
-        st.markdown("""
-**Ya, stok bahan berkurang** — yang dipotong adalah **kategori bahan** (JUMBO / B / AB MIX)
-sesuai **resep** produk, **bukan** “stok produk jadi” terpisah.
-
-| Contoh jual | Resep | Efek stok | Mutasi |
-|-------------|-------|-----------|--------|
-| 10 kg Strawberry JUMBO (pure) | 100% JUMBO | JUMBO −10 kg | `out_sale` |
-| 10 kg Mix 50% Jumbo + 50% AB | 0.5 + 0.5 | JUMBO −5, AB −5 | `out_sale` ×2 kategori |
-| 9 kg Mix ⅓+⅓+⅓ | ⅓ tiap | masing-masing −3 kg | `out_sale` ×3 |
-
-Hanya order **`confirmed`** yang memotong stok. **`draft` tidak potong.**  
-Batal confirmed → muncul `in_return` (stok kembali).  
-Cek di **Stok → Riwayat Mutasi** (filter tipe `out_sale` / Keluar).
-        """)
-
-    st.subheader("Produk & Penjualan")
-    with st.expander("Produk sales tidak muncul di order?"):
-        st.markdown("Belum di-**approve owner** atau `is_active=false`. Cek tab Approve Produk.")
+    st.subheader("Penjualan")
+    with st.expander("Diskon otomatis dari pelanggan?"):
+        st.markdown("Ya! Saat pilih pelanggan, diskon default (%) dari data pelanggan **otomatis terisi**. Bisa diubah manual sebelum simpan.")
+    with st.expander("Bagaimana cara edit order?"):
+        st.markdown("Di tab **Daftar Penjualan** → bagian **Edit Order** → pilih order (draft/confirmed) → edit tanggal, ongkir, diskon, catatan → Simpan.")
+    with st.expander("Bagaimana cetak invoice?"):
+        st.markdown("Di tab **Daftar Penjualan** → pilih order → klik **Download Invoice PDF**. Format A5, ada detail item, diskon, ongkir, total.")
     with st.expander("Format harga?"):
-        st.markdown("Tampil `Rp. 37.000`. Ketik `37000` (titik pemisah ribuan di display).")
-    with st.expander("Diskon persen hilang?"):
-        st.markdown(
-            "Sengaja disederhanakan: hanya **diskon nominal (Rp)** di atas tombol simpan order."
-        )
-    with st.expander("Subtotal tidak berubah saat ganti qty?"):
-        st.markdown(
-            "Bug lama (total di dalam form Streamlit). Sudah diganti perhitungan **live di luar form** "
-            "dengan multi-baris item. Restart app jika masih cache lama."
-        )
-    with st.expander("Satu pelanggan beli banyak jenis?"):
-        st.markdown(
-            "Ya. Tombol **Tambah baris item** — tiap baris produk/qty/harga sendiri. "
-            "Subtotal = jumlah (qty × harga) semua baris."
-        )
+        st.markdown("Tampil `Rp. 37.000`. Ketik `37000`.")
 
-    st.subheader("Log, Owner, Data")
-    with st.expander("Kolom Detail di Log untuk apa?"):
-        st.markdown(
-            "Pelengkap **Ringkasan**: data teknis (JSON payload, qty, field diubah). "
-            "Bukan menu aksi. Untuk audit 2 owner/partner & debug."
-        )
-    with st.expander("Apakah log bisa dihapus?"):
-        st.markdown(
-            "**Tidak.** Log permanen (tidak ada tombol hapus). "
-            "Edit/hapus data bisnis tetap meninggalkan jejak di log."
-        )
-    with st.expander("Owner edit/hapus pickup di riwayat?"):
-        st.markdown(
-            "Ya, di **Riwayat Pickup**: Edit / Batalkan / Hapus permanen — **tanpa approve**, "
-            "wajib log. Hapus yang sudah received akan rollback stok penerimaan dulu."
-        )
-    with st.expander("Apakah semua perubahan harus approve owner?"):
-        st.markdown("""
-Yang **wajib owner** (saat ini):
-- Approve/tolak koreksi pickup
-- Approve/tolak produk sales
-- Approve/tolak adjustment stok
-- Override penerimaan tidak balance
-- Hapus riwayat penerimaan
-- Master data kritis (user, toleransi) — akses halaman hanya owner
+    st.subheader("Retur")
+    with st.expander("Bagaimana cara retur?"):
+        st.markdown("Halaman **Retur** → pilih order yang sudah confirmed/shipped/delivered → isi qty per kategori + alasan → Kirim. Owner approve → stok masuk kembali.")
+    with st.expander("Retur parsial?"):
+        st.markdown("Ya! Bisa per kategori. Tidak harus full order.")
 
-Yang **langsung** tanpa antrean approve (tetap ter-log bila relevan):
-- Driver buat pickup baru
-- Sorter simpan penerimaan **yang balance**
-- Sales buat order (draft/confirmed)
-- Owner buat produk langsung aktif
-        """)
-    with st.expander("Database di mana? PostgreSQL?"):
-        st.markdown(
-            "Sekarang **SQLite** di `data/strawberry.db` (localhost). "
-            "Siap migrasi PostgreSQL / PostgREST nanti tanpa mengubah alur bisnis."
-        )
-    with st.expander("Upload foto di mana?"):
-        st.markdown("`uploads/` (pickup) dan `uploads/products/` (gambar produk).")
+    st.subheader("Profil & Password")
+    with st.expander("Bagaimana ganti password?"):
+        st.markdown("Sidebar → tombol **Profil** → isi password lama + baru + konfirmasi → Simpan.")
+
+    st.subheader("Master Data")
+    with st.expander("Bagaimana tambah kebun baru?"):
+        st.markdown("**Master Data → tab Kebun** → isi nama + kode (misal `RH3`) + lokasi → Simpan. Kebun langsung aktif dan muncul di form Pengambilan.")
+    with st.expander("Bagaimana atur hak akses?"):
+        st.markdown("**Master Data → tab Hak Akses** → centang/uncentang permission per role per modul → Simpan. Owner/Admin selalu full access.")
+    with st.expander("Bagaimana backup database?"):
+        st.markdown("**Master Data → tab Pengaturan** → bagian **Backup Database** → klik **Download Backup (.db)**. Simpan file .db sebagai backup.")
+
+    st.subheader("Laporan & Export")
+    with st.expander("Export data ke Excel/CSV?"):
+        st.markdown("Tombol **Export CSV / Export Excel** tersedia di: Stok (mutasi), Keuangan (pemasukan & pengeluaran), Laporan (penjualan), Log Aktivitas.")
+
+    st.subheader("Database")
+    with st.expander("SQLite atau PostgreSQL?"):
+        st.markdown("Default **SQLite** (`data/strawberry.db`). Untuk PostgreSQL, set env var `DATABASE_URL=postgresql://user:pass@host/db` sebelum menjalankan app.")
 
 st.divider()
-st.caption(
-    f"Login sebagai **{user['name']}** ({user['role']}). "
-    "Panduan ini mengikuti revisi fitur terbaru aplikasi."
-)
+st.caption(f"Login sebagai **{user['name']}** ({user['role']}). Panduan ini mengikuti revisi fitur terbaru.")

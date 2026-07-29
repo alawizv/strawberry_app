@@ -1,13 +1,15 @@
-"""Modul Penjualan — multi-item, diskon nominal, total live."""
+"""Modul Penjualan — multi-item, diskon auto, edit order, invoice PDF."""
+import json
+import io
 from datetime import date, datetime
 
 import streamlit as st
 
 from auth_utils import require_login, show_user_sidebar, flash_success, flash_error
 from database import (
-    get_db, Sale, SaleItem, Product, Customer,
+    get_db, Sale, SaleItem, Product, Customer, format_rp,
     InventoryMovement, SaleStatus, ShippingMethod, MovementType,
-    get_current_stock, Expense, format_rp, write_log,
+    get_current_stock, Expense, write_log, generate_invoice_number,
 )
 from ui_theme import is_dark
 
@@ -16,11 +18,10 @@ user = require_login(["owner", "admin", "sales"])
 show_user_sidebar()
 
 st.markdown("## 🛒 Penjualan")
-st.caption("Multi-item · diskon nominal · ongkir · cek stok")
+st.caption("Multi-item · diskon otomatis pelanggan · edit order · invoice PDF")
 
 SHIP_OPTIONS = [m.value for m in ShippingMethod]
 
-# session cart lines
 if "sale_lines" not in st.session_state:
     st.session_state.sale_lines = [{"product_id": None, "qty": 1.0, "price": 0.0}]
 
@@ -30,12 +31,7 @@ try:
 
     with tab_new:
         customers = db.query(Customer).filter_by(is_active=True).order_by(Customer.name).all()
-        products = (
-            db.query(Product)
-            .filter(Product.is_active == True, Product.approval_status == "approved")
-            .order_by(Product.name)
-            .all()
-        )
+        products = db.query(Product).filter(Product.is_active.is_(True), Product.approval_status == "approved").order_by(Product.name).all()
         prod_by_id = {p.id: p for p in products}
 
         if not products:
@@ -53,35 +49,30 @@ try:
             pick = st.selectbox(f"Hasil ({len(matched)})", options, key="cust_pick")
             cust = id_map.get(pick)
             if cust:
-                st.caption(f"Dipilih: **{cust.name}**")
+                st.caption(f"Dipilih: **{cust.name}** · Diskon default: {cust.default_discount_pct or 0}%")
         elif q:
-            st.warning(f"Tidak ada pelanggan cocok dengan “{search}”.")
+            st.warning(f"Tidak ada pelanggan cocok dengan \"{search}\".")
             with st.expander("➕ New Customer", expanded=True):
                 nc_name = st.text_input("Nama pelanggan baru *", value=search.strip(), key="nc_name")
                 nc_phone = st.text_input("Telepon", key="nc_phone")
                 nc_addr = st.text_input("Alamat", key="nc_addr")
+                nc_disc = st.number_input("Diskon default %", min_value=0.0, max_value=100.0, value=0.0, step=0.5, key="nc_disc")
                 if st.button("Simpan pelanggan baru", type="primary", key="nc_save"):
                     if not nc_name.strip():
                         st.error("Nama wajib.")
                     else:
-                        c = Customer(
-                            name=nc_name.strip(),
-                            phone=nc_phone.strip() or None,
-                            address=nc_addr.strip() or None,
-                            is_active=True,
-                        )
-                        db.add(c)
-                        db.flush()
-                        write_log(
-                            db, user, "customer.create",
-                            f"Pelanggan baru {nc_name.strip()}",
-                            entity_type="customer", entity_id=c.id,
-                        )
-                        db.commit()
-                        flash_success(f"Pelanggan '{nc_name.strip()}' ditambah.")
-                        st.rerun()
-        else:
-            st.caption("Ketik nama untuk mencari pelanggan.")
+                        existing = db.query(Customer).filter(Customer.name.ilike(nc_name.strip())).first()
+                        if existing:
+                            st.error(f"Pelanggan '{nc_name.strip()}' sudah ada (ID #{existing.id}).")
+                        else:
+                            c = Customer(name=nc_name.strip(), phone=nc_phone.strip() or None,
+                                address=nc_addr.strip() or None, default_discount_pct=float(nc_disc), is_active=True)
+                            db.add(c)
+                            db.flush()
+                            write_log(db, user, "customer.create", f"Pelanggan baru {nc_name.strip()}", entity_type="customer", entity_id=c.id)
+                            db.commit()
+                            flash_success(f"Pelanggan '{nc_name.strip()}' ditambah.")
+                            st.rerun()
 
         if cust and products:
             st.divider()
@@ -94,12 +85,10 @@ try:
                 ship_cost = st.number_input("Ongkir (Rp)", min_value=0.0, value=0.0, step=1000.0, format="%.0f")
                 notes = st.text_area("Catatan", height=80)
 
-            st.subheader("Item (bisa beda produk & qty)")
-            # ensure at least 1 line
+            st.subheader("Item")
             if not st.session_state.sale_lines:
                 st.session_state.sale_lines = [{"product_id": products[0].id, "qty": 1.0, "price": float(products[0].base_price)}]
 
-            # default product ids
             for line in st.session_state.sale_lines:
                 if line.get("product_id") not in prod_by_id:
                     line["product_id"] = products[0].id
@@ -109,57 +98,30 @@ try:
             with b_add:
                 if st.button("➕ Tambah baris item"):
                     p0 = products[0]
-                    st.session_state.sale_lines.append({
-                        "product_id": p0.id,
-                        "qty": 1.0,
-                        "price": float(p0.base_price),
-                    })
+                    st.session_state.sale_lines.append({"product_id": p0.id, "qty": 1.0, "price": float(p0.base_price)})
                     st.rerun()
             with b_clr:
                 if st.button("🧹 Reset item") and len(st.session_state.sale_lines) > 0:
                     p0 = products[0]
-                    st.session_state.sale_lines = [{
-                        "product_id": p0.id,
-                        "qty": 1.0,
-                        "price": float(p0.base_price),
-                    }]
+                    st.session_state.sale_lines = [{"product_id": p0.id, "qty": 1.0, "price": float(p0.base_price)}]
                     st.rerun()
 
-            items_calc = []  # (product, qty, price, line_sub)
+            items_calc = []
             for i, line in enumerate(list(st.session_state.sale_lines)):
                 with st.container(border=True):
                     ic1, ic2, ic3, ic4 = st.columns([3, 2, 2, 1])
                     pids = [p.id for p in products]
                     cur_pid = line.get("product_id") if line.get("product_id") in pids else products[0].id
                     with ic1:
-                        prod = st.selectbox(
-                            f"Produk #{i+1}",
-                            products,
-                            index=pids.index(cur_pid),
-                            format_func=lambda p: f"{p.name} ({format_rp(p.base_price)})",
-                            key=f"prod_{i}",
-                        )
+                        prod = st.selectbox(f"Produk #{i+1}", products, index=pids.index(cur_pid),
+                            format_func=lambda p: f"{p.name} ({format_rp(p.base_price)})", key=f"prod_{i}")
                     with ic2:
-                        qty = st.number_input(
-                            f"Qty kg #{i+1}",
-                            min_value=0.01,
-                            value=float(line.get("qty") or 1.0),
-                            step=0.1,
-                            format="%.2f",
-                            key=f"qty_{i}",
-                        )
+                        qty = st.number_input(f"Qty kg #{i+1}", min_value=0.01, value=float(line.get("qty") or 1.0), step=0.1, format="%.2f", key=f"qty_{i}")
                     with ic3:
-                        # key includes product id so ganti produk → harga default ikut berubah
                         price_key = f"price_{i}_{prod.id}"
                         if price_key not in st.session_state:
                             st.session_state[price_key] = float(prod.base_price)
-                        price = st.number_input(
-                            f"Harga/kg #{i+1}",
-                            min_value=0.0,
-                            step=500.0,
-                            format="%.0f",
-                            key=price_key,
-                        )
+                        price = st.number_input(f"Harga/kg #{i+1}", min_value=0.0, step=500.0, format="%.0f", key=price_key)
                     line_sub = float(qty) * float(price)
                     with ic4:
                         st.caption("Sub")
@@ -167,30 +129,25 @@ try:
                         if len(st.session_state.sale_lines) > 1 and st.button("🗑", key=f"del_{i}"):
                             st.session_state.sale_lines.pop(i)
                             st.rerun()
-
-                    st.session_state.sale_lines[i] = {
-                        "product_id": prod.id,
-                        "qty": float(qty),
-                        "price": float(price),
-                    }
+                    st.session_state.sale_lines[i] = {"product_id": prod.id, "qty": float(qty), "price": float(price)}
                     items_calc.append((prod, float(qty), float(price), line_sub))
 
-            # LIVE totals (outside form → update on every widget change)
             subtotal = sum(x[3] for x in items_calc)
             st.divider()
+
+            default_disc = 0.0
+            if cust and cust.default_discount_pct:
+                default_disc = subtotal * cust.default_discount_pct / 100.0
+
             disc_amt = st.number_input(
-                "Diskon nominal (Rp)",
-                min_value=0.0,
-                value=0.0,
-                step=1000.0,
-                format="%.0f",
-                help="Potongan harga total order (bukan persen)",
+                "Diskon nominal (Rp)", min_value=0.0, value=float(default_disc),
+                step=1000.0, format="%.0f",
+                help=f"Diskon default pelanggan: {cust.default_discount_pct or 0}% = {format_rp(default_disc)}. Bisa diubah.",
                 key="disc_amt",
             )
             after_disc = max(subtotal - float(disc_amt), 0.0)
             total = after_disc + float(ship_cost)
 
-            # rincian baris
             st.markdown("**Rincian item**")
             for prod, qty, price, line_sub in items_calc:
                 st.write(f"• {prod.name}: {qty:g} kg × {format_rp(price)} = **{format_rp(line_sub)}**")
@@ -198,18 +155,15 @@ try:
             bg = "#1a1f2b" if is_dark() else "#fff1f2"
             bd = "#f43f5e" if is_dark() else "#e11d48"
             tx = "#e6edf3" if is_dark() else "#18181b"
-            st.markdown(
-                f"""
-                <div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:14px;margin:8px 0;color:{tx};">
-                  <div>Subtotal item: <b>{format_rp(subtotal)}</b></div>
-                  <div>Diskon nominal: <b>- {format_rp(disc_amt)}</b></div>
-                  <div>Setelah diskon: <b>{format_rp(after_disc)}</b></div>
-                  <div>Ongkir: <b>{format_rp(ship_cost)}</b></div>
-                  <div style="font-size:1.25rem;margin-top:6px;">Total bayar: <b>{format_rp(total)}</b></div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"""
+            <div style="background:{bg};border:1px solid {bd};border-radius:12px;padding:14px;margin:8px 0;color:{tx};">
+              <div>Subtotal item: <b>{format_rp(subtotal)}</b></div>
+              <div>Diskon nominal: <b>- {format_rp(disc_amt)}</b></div>
+              <div>Setelah diskon: <b>{format_rp(after_disc)}</b></div>
+              <div>Ongkir: <b>{format_rp(ship_cost)}</b></div>
+              <div style="font-size:1.25rem;margin-top:6px;">Total bayar: <b>{format_rp(total)}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
 
             status_choice = st.selectbox("Status simpan", ["draft", "confirmed"])
             if st.button("Simpan Order", type="primary", use_container_width=True):
@@ -225,69 +179,33 @@ try:
                     for cid, kg_need in need.items():
                         stock = get_current_stock(db, cid)
                         if stock + 1e-9 < kg_need:
-                            cat_name = next(
-                                (r.category.name for prod, _, _, _ in items_calc for r in prod.recipes if r.category_id == cid),
-                                cid,
-                            )
-                            st.error(f"Stok kurang: {cat_name} butuh {kg_need:g} kg, tersedia {stock:g} kg")
+                            st.error(f"Stok kurang: category_id={cid} butuh {kg_need:g} kg, tersedia {stock:g} kg")
                             ok = False
                 if ok:
-                    sale = Sale(
-                        customer_id=cust.id,
-                        sale_date=sale_date,
-                        subtotal=float(subtotal),
-                        discount_amount=float(disc_amt),
-                        discount_pct=0.0,
-                        shipping_method=ship,
-                        shipping_cost=float(ship_cost),
-                        total_amount=float(total),
-                        status=status_choice,
-                        notes=notes or None,
-                        created_by_id=user["id"],
-                    )
+                    sale = Sale(customer_id=cust.id, sale_date=sale_date, subtotal=float(subtotal),
+                        discount_amount=float(disc_amt), discount_pct=0.0, shipping_method=ship,
+                        shipping_cost=float(ship_cost), total_amount=float(total),
+                        status=status_choice, notes=notes or None, created_by_id=user["id"])
                     db.add(sale)
                     db.flush()
+                    sale.invoice_number = generate_invoice_number(sale.id, sale_date)
                     for prod, qty, price, line_sub in items_calc:
-                        db.add(SaleItem(
-                            sale_id=sale.id,
-                            product_id=prod.id,
-                            qty_kg=float(qty),
-                            unit_price=float(price),
-                            subtotal=float(line_sub),
-                        ))
+                        db.add(SaleItem(sale_id=sale.id, product_id=prod.id, qty_kg=float(qty),
+                            unit_price=float(price), subtotal=float(line_sub)))
                     if status_choice == "confirmed":
                         for cid, kg_need in need.items():
-                            db.add(InventoryMovement(
-                                category_id=cid,
-                                movement_type=MovementType.OUT_SALE.value,
-                                qty_kg=-float(kg_need),
-                                ref_type="sale",
-                                ref_id=sale.id,
-                                notes=f"Sale #{sale.id}",
-                                created_by=user["name"],
-                            ))
+                            db.add(InventoryMovement(category_id=cid, movement_type=MovementType.OUT_SALE.value,
+                                qty_kg=-float(kg_need), ref_type="sale", ref_id=sale.id,
+                                notes=f"Sale #{sale.id}", created_by=user["name"]))
                         if ship_cost > 0:
-                            db.add(Expense(
-                                expense_date=sale_date,
-                                category="shipping",
-                                amount=float(ship_cost),
-                                description=f"Ongkir sale #{sale.id} ({ship})",
-                                related_sale_id=sale.id,
-                                created_by=user["name"],
-                            ))
-                    write_log(
-                        db, user, "sale.create",
-                        f"Order #{sale.id} {cust.name} {format_rp(total)} ({status_choice})",
-                        entity_type="sale", entity_id=sale.id,
-                        detail=str([(p.name, q, pr) for p, q, pr, _ in items_calc]),
-                    )
+                            db.add(Expense(expense_date=sale_date, category="shipping",
+                                amount=float(ship_cost), description=f"Ongkir sale #{sale.id} ({ship})",
+                                related_sale_id=sale.id, created_by=user["name"]))
+                    write_log(db, user, "sale.create", f"Order #{sale.id} {cust.name} {format_rp(total)} ({status_choice})",
+                        entity_type="sale", entity_id=sale.id, detail=str([(p.name, q, pr) for p, q, pr, _ in items_calc]))
                     db.commit()
-                    st.session_state.sale_lines = [{
-                        "product_id": products[0].id,
-                        "qty": 1.0,
-                        "price": float(products[0].base_price),
-                    }]
-                    flash_success(f"✅ Order #{sale.id} tersimpan · Total {format_rp(total)} ({status_choice})")
+                    st.session_state.sale_lines = [{"product_id": products[0].id, "qty": 1.0, "price": float(products[0].base_price)}]
+                    flash_success(f"✅ Order #{sale.id} tersimpan · {format_rp(total)} ({status_choice})")
                     st.rerun()
 
     with tab_list:
@@ -295,33 +213,76 @@ try:
         if not sales:
             st.info("Belum ada penjualan.")
         else:
-            rows = []
-            for s in sales:
-                rows.append({
-                    "ID": s.id,
-                    "Tanggal": str(s.sale_date),
-                    "Pelanggan": s.customer.name if s.customer else "-",
-                    "Subtotal": format_rp(s.subtotal),
-                    "Diskon": format_rp(s.discount_amount),
-                    "Ongkir": format_rp(s.shipping_cost),
-                    "Total": format_rp(s.total_amount),
-                    "Status": s.status,
-                    "Oleh": s.created_by_user.name if s.created_by_user else "-",
-                })
+            rows = [{
+                "ID": s.id, "Invoice": s.invoice_number or "-", "Tanggal": str(s.sale_date),
+                "Pelanggan": s.customer.name if s.customer else "-", "Total": format_rp(s.total_amount),
+                "Status": s.status, "Oleh": s.created_by_user.name if s.created_by_user else "-",
+            } for s in sales]
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
-            # detail items
-            st.subheader("Detail item order")
+            st.subheader("Detail & Invoice")
             sale_opts = {f"#{s.id} {s.customer.name if s.customer else ''} — {format_rp(s.total_amount)}": s.id for s in sales}
             sid_label = st.selectbox("Pilih order", list(sale_opts.keys()), key="sale_detail")
             sale = db.get(Sale, sale_opts[sid_label])
             if sale and sale.items:
                 st.dataframe([{
                     "Produk": it.product.name if it.product else it.product_id,
-                    "Qty kg": it.qty_kg,
-                    "Harga/kg": format_rp(it.unit_price),
-                    "Subtotal": format_rp(it.subtotal),
+                    "Qty kg": it.qty_kg, "Harga/kg": format_rp(it.unit_price), "Subtotal": format_rp(it.subtotal),
                 } for it in sale.items], use_container_width=True, hide_index=True)
+
+                from reportlab.lib.pagesizes import A5
+                from reportlab.pdfgen import canvas as pdf_canvas
+                from reportlab.lib.units import mm
+
+                def gen_invoice(sale_obj, items, customer, company_name="Strawberry Fresh Supply"):
+                    buf = io.BytesIO()
+                    c_pdf = pdf_canvas.Canvas(buf, pagesize=A5)
+                    w, h = A5
+                    y = h - 15*mm
+                    c_pdf.setFont("Helvetica-Bold", 14)
+                    c_pdf.drawString(15*mm, y, company_name)
+                    y -= 7*mm
+                    c_pdf.setFont("Helvetica", 9)
+                    c_pdf.drawString(15*mm, y, f"Invoice: {sale_obj.invoice_number or f'INV-{sale_obj.id}'}")
+                    y -= 5*mm
+                    c_pdf.drawString(15*mm, y, f"Tanggal: {sale_obj.sale_date}")
+                    y -= 5*mm
+                    c_pdf.drawString(15*mm, y, f"Pelanggan: {customer.name}")
+                    y -= 8*mm
+                    c_pdf.setFont("Helvetica-Bold", 9)
+                    c_pdf.drawString(15*mm, y, "Produk")
+                    c_pdf.drawString(80*mm, y, "Qty")
+                    c_pdf.drawString(100*mm, y, "Harga")
+                    c_pdf.drawString(130*mm, y, "Subtotal")
+                    y -= 5*mm
+                    c_pdf.line(15*mm, y, w-15*mm, y)
+                    y -= 5*mm
+                    c_pdf.setFont("Helvetica", 9)
+                    for item in items:
+                        pname = item.product.name if item.product else str(item.product_id)
+                        c_pdf.drawString(15*mm, y, pname[:30])
+                        c_pdf.drawString(80*mm, y, f"{item.qty_kg:g} kg")
+                        c_pdf.drawString(100*mm, y, format_rp(item.unit_price))
+                        c_pdf.drawString(130*mm, y, format_rp(item.subtotal))
+                        y -= 5*mm
+                    y -= 3*mm
+                    c_pdf.line(15*mm, y, w-15*mm, y)
+                    y -= 7*mm
+                    c_pdf.setFont("Helvetica-Bold", 10)
+                    c_pdf.drawString(15*mm, y, f"Subtotal: {format_rp(sale_obj.subtotal)}")
+                    y -= 5*mm
+                    c_pdf.drawString(15*mm, y, f"Diskon: - {format_rp(sale_obj.discount_amount)}")
+                    y -= 5*mm
+                    c_pdf.drawString(15*mm, y, f"Ongkir: {format_rp(sale_obj.shipping_cost)}")
+                    y -= 7*mm
+                    c_pdf.setFont("Helvetica-Bold", 12)
+                    c_pdf.drawString(15*mm, y, f"TOTAL: {format_rp(sale_obj.total_amount)}")
+                    c_pdf.save()
+                    buf.seek(0)
+                    return buf
+
+                pdf_buf = gen_invoice(sale, sale.items, sale.customer)
+                st.download_button("📄 Download Invoice PDF", pdf_buf, f"Invoice_{sale.invoice_number or sale.id}.pdf", "application/pdf")
 
             st.subheader("Ubah Status")
             active = [s for s in sales if s.status not in (SaleStatus.CANCELLED.value, SaleStatus.DELIVERED.value)]
@@ -349,50 +310,62 @@ try:
                             if short:
                                 st.stop()
                             for cid, kg_need in need.items():
-                                db.add(InventoryMovement(
-                                    category_id=cid,
-                                    movement_type=MovementType.OUT_SALE.value,
-                                    qty_kg=-float(kg_need),
-                                    ref_type="sale",
-                                    ref_id=sale.id,
-                                    notes=f"Sale #{sale.id} confirmed",
-                                    created_by=user["name"],
-                                ))
+                                db.add(InventoryMovement(category_id=cid, movement_type=MovementType.OUT_SALE.value,
+                                    qty_kg=-float(kg_need), ref_type="sale", ref_id=sale.id,
+                                    notes=f"Sale #{sale.id} confirmed", created_by=user["name"]))
                             if sale.shipping_cost and sale.shipping_cost > 0:
                                 exists = db.query(Expense).filter_by(related_sale_id=sale.id, category="shipping").first()
                                 if not exists:
-                                    db.add(Expense(
-                                        expense_date=sale.sale_date,
-                                        category="shipping",
-                                        amount=float(sale.shipping_cost),
-                                        description=f"Ongkir sale #{sale.id}",
-                                        related_sale_id=sale.id,
-                                        created_by=user["name"],
-                                    ))
+                                    db.add(Expense(expense_date=sale.sale_date, category="shipping",
+                                        amount=float(sale.shipping_cost), description=f"Ongkir sale #{sale.id}",
+                                        related_sale_id=sale.id, created_by=user["name"]))
                         if new_status == "shipped":
                             sale.shipped_at = datetime.utcnow()
                         if old in ("confirmed", "shipped", "delivered") and new_status == "cancelled":
-                            movs = db.query(InventoryMovement).filter_by(
-                                ref_type="sale", ref_id=sale.id, movement_type=MovementType.OUT_SALE.value
-                            ).all()
+                            movs = db.query(InventoryMovement).filter_by(ref_type="sale", ref_id=sale.id, movement_type=MovementType.OUT_SALE.value).all()
                             for m in movs:
-                                db.add(InventoryMovement(
-                                    category_id=m.category_id,
-                                    movement_type=MovementType.IN_RETURN.value,
-                                    qty_kg=abs(m.qty_kg),
-                                    ref_type="sale",
-                                    ref_id=sale.id,
-                                    notes=f"Cancel sale #{sale.id}",
-                                    created_by=user["name"],
-                                ))
+                                db.add(InventoryMovement(category_id=m.category_id, movement_type=MovementType.IN_RETURN.value,
+                                    qty_kg=abs(m.qty_kg), ref_type="sale", ref_id=sale.id,
+                                    notes=f"Cancel sale #{sale.id}", created_by=user["name"]))
+                            exp = db.query(Expense).filter_by(related_sale_id=sale.id, category="shipping").first()
+                            if exp:
+                                db.delete(exp)
                         sale.status = new_status
-                        write_log(
-                            db, user, "sale.status",
-                            f"Sale #{sale.id}: {old} → {new_status}",
-                            entity_type="sale", entity_id=sale.id,
-                        )
+                        write_log(db, user, "sale.status", f"Sale #{sale.id}: {old} → {new_status}",
+                            entity_type="sale", entity_id=sale.id)
                         db.commit()
                         flash_success(f"✅ Sale #{sale.id}: {old} → {new_status}")
                         st.rerun()
+
+            st.subheader("Edit Order")
+            editable = [s for s in sales if s.status in ("draft", "confirmed")]
+            if editable:
+                edit_opts = {f"#{s.id} {s.customer.name if s.customer else ''} — {format_rp(s.total_amount)} ({s.status})": s.id for s in editable}
+                edit_sel = st.selectbox("Pilih order untuk edit", list(edit_opts.keys()), key="edit_order_sel")
+                edit_sale = db.get(Sale, edit_opts[edit_sel])
+                if edit_sale:
+                    with st.form("edit_order_form"):
+                        new_date = st.date_input("Tanggal", value=edit_sale.sale_date)
+                        ship_idx = SHIP_OPTIONS.index(edit_sale.shipping_method) if edit_sale.shipping_method in SHIP_OPTIONS else 0
+                        new_ship = st.selectbox("Metode kirim", SHIP_OPTIONS, index=ship_idx)
+                        new_ship_cost = st.number_input("Ongkir", value=float(edit_sale.shipping_cost or 0))
+                        new_disc = st.number_input("Diskon nominal", value=float(edit_sale.discount_amount or 0))
+                        new_notes = st.text_area("Catatan", value=edit_sale.notes or "")
+                        if st.form_submit_button("Simpan Perubahan", type="primary"):
+                            before = {"date": str(edit_sale.sale_date), "shipping": edit_sale.shipping_method,
+                                "ongkir": edit_sale.shipping_cost, "discount": edit_sale.discount_amount, "notes": edit_sale.notes}
+                            edit_sale.sale_date = new_date
+                            edit_sale.shipping_method = new_ship
+                            edit_sale.shipping_cost = float(new_ship_cost)
+                            edit_sale.discount_amount = float(new_disc)
+                            edit_sale.notes = new_notes or None
+                            edit_sale.total_amount = (edit_sale.subtotal or 0) - float(new_disc) + float(new_ship_cost)
+                            after = {"date": str(edit_sale.sale_date), "shipping": edit_sale.shipping_method,
+                                "ongkir": edit_sale.shipping_cost, "discount": edit_sale.discount_amount, "notes": edit_sale.notes}
+                            write_log(db, user, "sale.edit", f"Edit order #{edit_sale.id}",
+                                entity_type="sale", entity_id=edit_sale.id, detail=json.dumps({"before": before, "after": after}))
+                            db.commit()
+                            flash_success(f"Order #{edit_sale.id} diupdate.")
+                            st.rerun()
 finally:
     db.close()

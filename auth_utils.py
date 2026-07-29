@@ -1,28 +1,34 @@
-"""Shared auth helpers for multipage Streamlit app."""
+"""Shared auth helpers for multipage Streamlit app with granular permissions."""
 import streamlit as st
 
 from ui_theme import apply_theme, theme_toggle, get_theme_mode
 
+MODULE_MAP = {
+    "Pengambilan": "pengambilan",
+    "Penerimaan Sortir": "penerimaan",
+    "Penerimaan & Sortir": "penerimaan",
+    "Stok": "stok",
+    "Produk": "produk",
+    "Penjualan": "penjualan",
+    "Keuangan": "keuangan",
+    "Master Data": "master_data",
+    "Laporan": "laporan",
+    "Log Aktivitas": "log",
+    "Panduan FAQ": "panduan",
+    "Retur": "retur",
+    "Profil": "profil",
+}
 
-ROLE_PAGES = {
-    "owner": {
-        "Pengambilan", "Penerimaan Sortir", "Stok", "Produk",
-        "Penjualan", "Keuangan", "Master Data", "Laporan",
-        "Log Aktivitas", "Panduan FAQ",
-    },
-    "admin": {
-        "Pengambilan", "Penerimaan Sortir", "Stok", "Produk",
-        "Penjualan", "Keuangan", "Master Data", "Laporan",
-        "Log Aktivitas", "Panduan FAQ",
-    },
-    "driver": {"Pengambilan", "Stok", "Panduan FAQ"},
-    "sorter": {"Penerimaan Sortir", "Stok", "Panduan FAQ"},
-    "sales": {"Penjualan", "Stok", "Produk", "Laporan", "Panduan FAQ"},
+DEFAULT_ROLE_PAGES = {
+    "owner": set(MODULE_MAP.values()),
+    "admin": set(MODULE_MAP.values()),
+    "driver": {"dashboard", "pengambilan", "stok", "panduan", "profil"},
+    "sorter": {"dashboard", "penerimaan", "stok", "panduan", "profil"},
+    "sales": {"dashboard", "produk", "penjualan", "stok", "laporan", "panduan", "retur", "profil"},
 }
 
 
-def require_login(allowed_roles=None):
-    # Theme first — reduces white flash when multipage script reloads
+def require_login(allowed_roles=None, module=None):
     apply_theme()
     if "user" not in st.session_state or st.session_state.user is None:
         st.warning("Silakan login dulu di halaman utama (Dashboard).")
@@ -33,6 +39,31 @@ def require_login(allowed_roles=None):
         st.stop()
     show_flash()
     return user
+
+
+def check_permission(user, module_name, action="view"):
+    role = user.get("role", "")
+    if role in ("owner", "admin"):
+        return True
+    from database import get_db, Permission
+    db = get_db()
+    try:
+        perm = db.query(Permission).filter_by(role=role, module=module_name).first()
+        if not perm:
+            return True
+        if action == "view":
+            return perm.can_view
+        if action == "create":
+            return perm.can_create
+        if action == "edit":
+            return perm.can_edit
+        if action == "delete":
+            return perm.can_delete
+        if action == "approve":
+            return perm.can_approve
+        return False
+    finally:
+        db.close()
 
 
 def flash_success(msg: str, balloons: bool = True):
@@ -89,5 +120,10 @@ def show_user_sidebar():
         st.divider()
         theme_toggle(key="theme_mode_radio")
         st.divider()
+        if st.button("Profil", key="profile_page", use_container_width=True):
+            try:
+                st.switch_page("pages/12_🔐_Profil.py")
+            except Exception:
+                pass
         if st.button("Logout", key="logout_page", use_container_width=True):
             go_home_logout()
