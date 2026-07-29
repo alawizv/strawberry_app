@@ -1,0 +1,18 @@
+# Base Streamlit theme (CSS in ui_theme.py overrides for Light/Dark session toggle)
+[theme]
+base = "light"
+primaryColor = "#e11d48"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#0f172a"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = true
