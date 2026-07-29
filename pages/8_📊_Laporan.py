@@ -11,6 +11,7 @@ from database import (
     get_db, Sale, SaleItem, Product, Pickup, Receiving, SortingDetail,
     Category, Expense, User, get_stock_by_name, Farm, format_rp,
 )
+from ui_theme import safe_download_button
 
 st.set_page_config(page_title="Laporan", page_icon="📊", layout="wide")
 user = require_login(["owner", "admin", "sales"])
@@ -161,9 +162,9 @@ try:
         xlsx_buf.seek(0)
         c_csv, c_xlsx = st.columns(2)
         with c_csv:
-            st.download_button("📥 Export Penjualan CSV", csv, "laporan_penjualan.csv", "text/csv")
+            safe_download_button("Export Penjualan CSV", csv, "laporan_penjualan.csv", "text/csv", key="lap_csv")
         with c_xlsx:
-            st.download_button("📥 Export Penjualan Excel", xlsx_buf, "laporan_penjualan.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            safe_download_button("Export Penjualan Excel", xlsx_buf, "laporan_penjualan.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="lap_xlsx")
 finally:
     db.close()

@@ -11,7 +11,7 @@ from database import (
     InventoryMovement, SaleStatus, ShippingMethod, MovementType,
     get_current_stock, Expense, write_log, generate_invoice_number,
 )
-from ui_theme import is_dark
+from ui_theme import is_dark, safe_download_button
 
 st.set_page_config(page_title="Penjualan", page_icon="🛒", layout="wide")
 user = require_login(["owner", "admin", "sales"])
@@ -282,7 +282,7 @@ try:
                     return buf
 
                 pdf_buf = gen_invoice(sale, sale.items, sale.customer)
-                st.download_button("📄 Download Invoice PDF", pdf_buf, f"Invoice_{sale.invoice_number or sale.id}.pdf", "application/pdf")
+                safe_download_button("Download Invoice PDF", pdf_buf, f"Invoice_{sale.invoice_number or sale.id}.pdf", "application/pdf", key="inv_pdf")
 
             st.subheader("Ubah Status")
             active = [s for s in sales if s.status not in (SaleStatus.CANCELLED.value, SaleStatus.DELIVERED.value)]

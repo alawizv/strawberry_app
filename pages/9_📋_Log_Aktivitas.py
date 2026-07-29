@@ -8,6 +8,7 @@ import pandas as pd
 
 from auth_utils import require_login, show_user_sidebar
 from database import get_db, ActivityLog, format_diff
+from ui_theme import safe_download_button
 
 st.set_page_config(page_title="Log Aktivitas", page_icon="📋", layout="wide")
 user = require_login(["owner", "admin"])
@@ -96,9 +97,9 @@ try:
         xlsx_buf.seek(0)
         c_csv, c_xlsx = st.columns(2)
         with c_csv:
-            st.download_button("📥 Export CSV", csv, "log_aktivitas.csv", "text/csv")
+            safe_download_button("Export Log CSV", csv, "log_aktivitas.csv", "text/csv", key="log_csv")
         with c_xlsx:
-            st.download_button("📥 Export Excel", xlsx_buf, "log_aktivitas.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            safe_download_button("Export Log Excel", xlsx_buf, "log_aktivitas.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="log_xlsx")
 finally:
     db.close()

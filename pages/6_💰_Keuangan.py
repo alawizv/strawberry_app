@@ -7,6 +7,7 @@ import streamlit as st
 
 from auth_utils import require_login, show_user_sidebar, flash_success
 from database import get_db, Sale, Expense, write_log
+from ui_theme import safe_download_button
 
 st.set_page_config(page_title="Keuangan", page_icon="💰", layout="wide")
 user = require_login(["owner", "admin"])
@@ -52,10 +53,10 @@ try:
             xlsx_buf.seek(0)
             c_csv, c_xlsx = st.columns(2)
             with c_csv:
-                st.download_button("📥 Export CSV", csv, "pemasukan.csv", "text/csv")
+                safe_download_button("Export Pemasukan CSV", csv, "pemasukan.csv", "text/csv", key="inc_csv")
             with c_xlsx:
-                st.download_button("📥 Export Excel", xlsx_buf, "pemasukan.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                safe_download_button("Export Pemasukan Excel", xlsx_buf, "pemasukan.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="inc_xlsx")
         else:
             st.info("Belum ada penjualan di periode ini.")
 
@@ -76,9 +77,9 @@ try:
             xlsx_buf.seek(0)
             c_csv, c_xlsx = st.columns(2)
             with c_csv:
-                st.download_button("📥 Export CSV", csv, "pengeluaran.csv", "text/csv", key="exp_csv")
+                safe_download_button("Export Pengeluaran CSV", csv, "pengeluaran.csv", "text/csv", key="exp_csv")
             with c_xlsx:
-                st.download_button("📥 Export Excel", xlsx_buf, "pengeluaran.xlsx",
+                safe_download_button("Export Pengeluaran Excel", xlsx_buf, "pengeluaran.xlsx",
                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="exp_xlsx")
 
             st.subheader("Hapus Pengeluaran (Owner)")

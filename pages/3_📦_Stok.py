@@ -12,7 +12,7 @@ from database import (
     get_db, Category, InventoryMovement, get_stock_by_name, write_log, ChangeRequest,
     Pickup, SortingDetail, Receiving,
 )
-from ui_theme import text_primary, text_muted
+from ui_theme import text_primary, text_muted, safe_download_button
 
 st.set_page_config(page_title="Stok", page_icon="📦", layout="wide")
 user = require_login(["owner", "admin", "driver", "sorter", "sales"])
@@ -119,13 +119,13 @@ try:
         col_csv, col_xlsx = st.columns(2)
         with col_csv:
             csv_data = df_export.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Export CSV", csv_data, "stok_mutasi.csv", "text/csv")
+            safe_download_button("Export CSV", csv_data, "stok_mutasi.csv", "text/csv", key="stok_csv")
         with col_xlsx:
             xlsx_buf = io.BytesIO()
             df_export.to_excel(xlsx_buf, index=False, engine="openpyxl")
             xlsx_buf.seek(0)
-            st.download_button("📥 Export Excel", xlsx_buf, "stok_mutasi.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            safe_download_button("Export Excel", xlsx_buf, "stok_mutasi.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="stok_xlsx")
     else:
         st.info("Belum ada mutasi stok.")
 

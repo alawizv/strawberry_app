@@ -10,6 +10,7 @@ from database import (
     get_db, Category, User, Customer, Setting, Role, hash_password,
     Farm, Permission, get_default_permissions, write_log, DB_PATH, is_sqlite,
 )
+from ui_theme import safe_download_button
 
 st.set_page_config(page_title="Master Data", page_icon="⚙️", layout="wide")
 user = require_login(["owner", "admin"])
@@ -286,7 +287,7 @@ try:
             if os.path.isfile(DB_PATH):
                 with open(DB_PATH, "rb") as f:
                     db_bytes = f.read()
-                st.download_button("📥 Download Backup (.db)", db_bytes, "strawberry_backup.db", "application/octet-stream")
+                safe_download_button("Download Backup (.db)", db_bytes, "strawberry_backup.db", "application/octet-stream", key="backup_db")
             else:
                 st.warning("File database tidak ditemukan.")
         else:

@@ -53,21 +53,6 @@ def _persist_theme_js(mode: str):
           const root = window.parent.document;
           if (root) {{
             root.documentElement.setAttribute('data-strawberry-theme', '{safe}');
-            const app = root.querySelector('.stApp') || root.body;
-            if (app) {{
-              app.style.backgroundColor = '{bg}';
-              app.style.color = '{fg}';
-              app.style.transition = 'background-color 0.15s ease, color 0.15s ease';
-            }}
-            const main = root.querySelector('[data-testid="stAppViewContainer"]');
-            if (main) main.style.backgroundColor = '{bg}';
-            const header = root.querySelector('[data-testid="stHeader"]');
-            if (header) header.style.background = '{bg2}';
-            const sidebar = root.querySelector('[data-testid="stSidebar"]');
-            if (sidebar) {{
-              sidebar.style.backgroundColor = '{sidebar_bg}';
-              sidebar.style.transition = 'background-color 0.15s ease';
-            }}
           }}
         }} catch (e) {{}}
         </script>
@@ -77,7 +62,49 @@ def _persist_theme_js(mode: str):
     )
 
 
+def _early_paint_css() -> str:
+    """Return CSS string for immediate theme injection via st.markdown (no iframe delay)."""
+    dark = is_dark()
+    if dark:
+        bg = "#0b0f14"
+        bg2 = "#12181f"
+        fg = "#f1f5f9"
+        fg2 = "#94a3b8"
+        border = "#2a3441"
+        sidebar_bg = "#0d1218"
+        card = "#151c24"
+    else:
+        bg = "#f8fafc"
+        bg2 = "#ffffff"
+        fg = "#0f172a"
+        fg2 = "#64748b"
+        border = "#e2e8f0"
+        sidebar_bg = "#fff1f2"
+        card = "#ffffff"
+
+    return f"""
+<style>
+/* === EARLY PAINT — apply instantly, no flash === */
+html, body, .stApp, [data-testid="stAppViewContainer"],
+section.main, .main .block-container {{
+    background-color: {bg} !important;
+    color: {fg} !important;
+}}
+[data-testid="stHeader"] {{ background: {bg2} !important; }}
+section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
+section[data-testid="stSidebar"] * {{ color: {fg} !important; }}
+/* Smooth transitions to eliminate perceived flash */
+.stApp, section[data-testid="stSidebar"],
+[data-testid="stHeader"], .main .block-container {{
+    transition: none !important;
+    animation: none !important;
+}}
+</style>
+"""
+
+
 def _early_paint_js():
+    """Backup JS for localStorage-based theme restore (runs after CSS)."""
     components.html(
         """
         <script>
@@ -87,8 +114,6 @@ def _early_paint_js():
             const bg = mode === 'dark' ? '#0b0f14' : '#f8fafc';
             const bg2 = mode === 'dark' ? '#12181f' : '#ffffff';
             const fg = mode === 'dark' ? '#f1f5f9' : '#0f172a';
-            const fg2 = mode === 'dark' ? '#94a3b8' : '#64748b';
-            const border = mode === 'dark' ? '#2a3441' : '#e2e8f0';
             const sidebarBg = mode === 'dark' ? '#0d1218' : '#fff1f2';
             const root = window.parent.document;
             if (!root) return;
@@ -108,21 +133,6 @@ def _early_paint_js():
               [data-testid="stHeader"] { background: ${bg2} !important; }
               section[data-testid="stSidebar"] { background: ${sidebarBg} !important; }
               section[data-testid="stSidebar"] * { color: ${fg} !important; }
-              .stApp a, .stApp a span, .stApp a p,
-              .stApp button[data-baseweb="tab"],
-              .stApp [data-testid="stExpander"] summary,
-              .stApp [data-testid="stExpander"] summary span,
-              .stApp [data-testid="stExpander"] p,
-              .stApp .streamlit-expanderContent p,
-              .stApp .streamlit-expanderContent span,
-              .stApp .streamlit-expanderContent div,
-              .stApp [data-testid="stMarkdownContainer"] a,
-              .stApp [data-testid="stMarkdownContainer"] a span {
-                color: ${fg} !important;
-              }
-              .stApp .streamlit-expanderHeader:hover { background: ${bg2} !important; }
-              .stApp [data-testid="stCaption"], .stApp .stCaption,
-              .stApp small, .stApp .stMarkdown small { color: ${fg2} !important; }
             `;
             const app = root.querySelector('.stApp');
             if (app) { app.style.backgroundColor = bg; app.style.color = fg; }
@@ -260,7 +270,6 @@ section.main, section.main > div {{
 .stApp small, .stApp .stMarkdown small {{
     color: {p["text2"]} !important;
 }}
-/* Strong / bold still readable */
 .stApp strong, .stApp b {{ color: {p["text"]} !important; }}
 
 /* ========== Sidebar ========== */
@@ -311,14 +320,12 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
     color: {p["muted"]} !important;
     opacity: 0.85 !important;
 }}
-/* Number input steppers */
 .stApp .stNumberInput button {{
     background: {p["secondary_btn_bg"]} !important;
     color: {p["text"]} !important;
     border-color: {p["border"]} !important;
 }}
-/* Select dropdown menu */
-.stApp [data-baseweb="popover"] ,
+.stApp [data-baseweb="popover"],
 .stApp [data-baseweb="menu"],
 .stApp ul[role="listbox"],
 .stApp li[role="option"] {{
@@ -330,7 +337,6 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
     background-color: {p["primary_soft"]} !important;
     color: {p["text"]} !important;
 }}
-/* Checkbox / radio text */
 .stApp .stCheckbox label span,
 .stApp .stRadio label span,
 .stApp [data-testid="stCheckbox"] label,
@@ -419,7 +425,7 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
 .stApp .streamlit-expanderContent,
 .stApp .streamlit-expanderContent p,
 .stApp .streamlit-expanderContent span,
-.stApp .streamlit-expanderContent div {{
+.stApp .streamlit-expenderContent div {{
     color: {p["text"]} !important;
 }}
 .stApp .streamlit-expanderHeader:hover {{
@@ -504,7 +510,6 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
 
 /* ========== Links ========== */
 .stApp a {{ color: {p["primary"]} !important; }}
-/* View more/less and show/hide links */
 .stApp a.streamlit-expanderHeader,
 .stApp .streamlit-expanderHeader a,
 .stApp [data-testid="stMarkdownContainer"] a,
@@ -514,17 +519,9 @@ section[data-testid="stSidebar"] [data-testid="stCaption"] {{
     color: {p["primary"]} !important;
     text-decoration-color: {p["primary"]} !important;
 }}
-/* Generic "show more", "view more", "less" text */
 .stApp span[style*="cursor: pointer"],
 .stApp div[role="button"] span {{
     color: {p["text"]} !important;
-}}
-/* Smooth page transitions — reduce flash */
-.stApp {{
-    transition: background-color 0.15s ease, color 0.15s ease;
-}}
-section[data-testid="stSidebar"] {{
-    transition: background-color 0.15s ease;
 }}
 
 /* ========== Custom classes ========== */
@@ -671,9 +668,32 @@ def apply_theme():
     if THEME_KEY not in st.session_state:
         st.session_state[THEME_KEY] = "light"
     _sync_theme_from_widgets()
-    _early_paint_js()
+    # CSS first (synchronous, no iframe delay — eliminates flash)
+    st.markdown(_early_paint_css(), unsafe_allow_html=True)
     inject_theme_css()
+    # JS backup for localStorage persistence (runs in iframe, after CSS)
+    _early_paint_js()
     _persist_theme_js(get_theme_mode())
+
+
+def safe_download_button(label, data, file_name, mime="application/octet-stream", key=None, **kwargs):
+    """Wrapper for st.download_button that prevents IDM auto-detect.
+
+    Shows a trigger button first; the actual download button only appears after click.
+    """
+    trigger_key = f"_dl_trigger_{key}" if key else f"_dl_trigger_{id(data)}"
+    if trigger_key not in st.session_state:
+        st.session_state[trigger_key] = False
+
+    if not st.session_state[trigger_key]:
+        if st.button(f"📥 {label}", key=f"_dl_btn_{key}" if key else None, **kwargs):
+            st.session_state[trigger_key] = True
+            st.rerun()
+    else:
+        st.download_button(label, data, file_name, mime, key=key, **kwargs)
+        if st.button("✖ Tutup", key=f"_dl_close_{key}" if key else None):
+            st.session_state[trigger_key] = False
+            st.rerun()
 
 
 def page_header(title: str, caption: str = ""):

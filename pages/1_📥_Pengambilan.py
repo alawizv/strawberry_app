@@ -12,6 +12,7 @@ from database import (
     Farm, get_farms, get_farm_objects, generate_barcode_data,
     Receiving, InventoryMovement, SortingDetail, MovementType, farm_code, make_sj_number,
 )
+from ui_theme import safe_download_button
 
 st.set_page_config(page_title="Pengambilan", page_icon="📥", layout="wide")
 user = require_login(["owner", "admin", "driver"])
@@ -163,8 +164,8 @@ try:
                 with c1:
                     st.image(qr_buf, caption=f"QR {sj_number}", width=180)
                 with c2:
-                    st.download_button(
-                        label=f"📷 Download QR", data=qr_buf.getvalue(),
+                    safe_download_button(
+                        label="Download QR", data=qr_buf.getvalue(),
                         file_name=f"qr_{sj_number}.png", mime="image/png",
                         key=f"dl_qr_{sj_number}",
                     )
@@ -182,8 +183,8 @@ try:
 <img src="data:image/png;base64,{qr_b64}" width="150"/>
 <p style="font-size:12px;">Scan QR ini saat penerimaan di gudang.</p>
 </body></html>"""
-                    st.download_button(
-                        label="🖨 Cetak SJ (HTML)", data=print_html,
+                    safe_download_button(
+                        label="Cetak SJ (HTML)", data=print_html,
                         file_name=f"SJ_{sj_number}.html", mime="text/html",
                         key=f"print_{sj_number}",
                     )
