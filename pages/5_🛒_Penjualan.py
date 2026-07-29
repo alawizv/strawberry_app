@@ -1,10 +1,12 @@
 """Modul Penjualan — multi-item, diskon auto, edit order, invoice PDF + WhatsApp."""
 import json
 import io
+import os
 import urllib.parse
 from datetime import date, datetime
 
 import streamlit as st
+import requests
 
 from auth_utils import require_login, show_user_sidebar, flash_success, flash_error
 from database import (
@@ -13,6 +15,43 @@ from database import (
     get_current_stock, Expense, write_log, generate_invoice_number,
 )
 from ui_theme import is_dark, safe_download_button
+
+
+def send_waha_message(phone: str, message: str) -> dict:
+    """Send WhatsApp message via WAHA API."""
+    waha_url = os.environ.get("WAHA_URL", "").strip()
+    waha_key = os.environ.get("WAHA_API_KEY", "").strip()
+    waha_session = os.environ.get("WAHA_SESSION", "default").strip()
+
+    if not waha_url:
+        return {"error": "WAHA_URL not configured"}
+
+    # Clean phone number
+    phone = phone.strip().replace("+", "").replace("-", "").replace(" ", "")
+    if not phone.startswith("62") and phone.startswith("0"):
+        phone = "62" + phone[1:]
+
+    if not phone:
+        return {"error": "Phone number empty"}
+
+    try:
+        url = f"{waha_url}/api/sendText"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Api-Key": waha_key,
+        }
+        payload = {
+            "session": waha_session,
+            "chatId": f"{phone}@c.us",
+            "text": message,
+        }
+        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        if resp.status_code == 200 or resp.status_code == 201:
+            return {"success": True, "data": resp.json()}
+        else:
+            return {"error": f"WAHA API error {resp.status_code}: {resp.text[:200]}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 st.set_page_config(page_title="Penjualan", page_icon="🛒", layout="wide")
 user = require_login(["owner", "admin", "sales"])
@@ -268,11 +307,25 @@ try:
                 phone = ws["customer_phone"].strip().replace("+", "").replace("-", "").replace(" ", "")
                 if not phone.startswith("62") and phone.startswith("0"):
                     phone = "62" + phone[1:]
-                encoded_msg = urllib.parse.quote(wa_msg)
-                wa_url = f"https://wa.me/{phone}?text={encoded_msg}" if phone else None
 
-                if wa_url:
-                    st.link_button("📱 KIRIM WHATSAPP", wa_url, use_container_width=True, type="primary")
+                # Check if WAHA is configured
+                waha_configured = bool(os.environ.get("WAHA_URL", "").strip())
+
+                if waha_configured and phone:
+                    if st.button("📱 KIRIM WHATSAPP", use_container_width=True, type="primary", key="btn_waha_send"):
+                        with st.spinner("Mengirim pesan via WhatsApp..."):
+                            result = send_waha_message(phone, wa_msg)
+                        if result.get("success"):
+                            st.success("✅ Pesan WhatsApp terkirim!")
+                            st.balloons()
+                        else:
+                            st.error(f"Gagal kirim: {result.get('error', 'Unknown error')}")
+                            st.caption("Coba kirim manual via link di bawah.")
+
+                if phone:
+                    encoded_msg = urllib.parse.quote(wa_msg)
+                    wa_url = f"https://wa.me/{phone}?text={encoded_msg}"
+                    st.link_button("🔗 Buka WhatsApp", wa_url, use_container_width=True, type="secondary" if waha_configured else "primary")
                     with st.expander("👀 Preview Pesan"):
                         st.code(wa_msg, language=None)
                 else:
