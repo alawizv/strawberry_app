@@ -33,8 +33,7 @@ def theme_toggle(key: str = "theme_mode_radio"):
     if new_mode != mode:
         set_theme_mode(new_mode)
         _persist_theme_js(new_mode)
-    else:
-        _persist_theme_js(mode)
+    # removed: else branch injected iframe every page even when theme unchanged → flicker
     st.caption(f"Mode aktif: **{get_theme_mode().title()}**")
     return get_theme_mode()
 
@@ -671,9 +670,15 @@ def apply_theme():
     # CSS first (synchronous, no iframe delay — eliminates flash)
     st.markdown(_early_paint_css(), unsafe_allow_html=True)
     inject_theme_css()
-    # JS backup for localStorage persistence (runs in iframe, after CSS)
-    _early_paint_js()
-    _persist_theme_js(get_theme_mode())
+    # Persist to localStorage only on first load (no iframe on every page navigation → no flicker)
+    if "_theme_persisted" not in st.session_state:
+        _persist_theme_js(get_theme_mode())
+        st.session_state["_theme_persisted"] = get_theme_mode()
+    elif st.session_state.get("_theme_persisted") != get_theme_mode():
+        # Theme just changed — update localStorage
+        _persist_theme_js(get_theme_mode())
+        st.session_state["_theme_persisted"] = get_theme_mode()
+    # Removed: _early_paint_js() — redundant with CSS and caused iframe flicker
 
 
 def safe_download_button(label, data, file_name, mime="application/octet-stream", key=None, **kwargs):

@@ -23,15 +23,18 @@ db = get_db()
 try:
     f1, f2, f3 = st.columns(3)
     with f1:
-        action_filter = st.text_input("Filter action", placeholder="mis. receiving.create")
+        # Collect distinct actions from recent logs for dropdown
+        recent_actions = db.query(ActivityLog.action).distinct().order_by(ActivityLog.action).all()
+        action_options = ["Semua"] + [a[0] for a in recent_actions if a[0]]
+        action_choice = st.selectbox("Filter action", action_options, key="log_action_filter")
     with f2:
         user_filter = st.text_input("Filter user", placeholder="mis. owner")
     with f3:
         date_filter = st.date_input("Dari tanggal", value=None, key="log_date")
 
     q = db.query(ActivityLog).order_by(ActivityLog.created_at.desc())
-    if action_filter.strip():
-        q = q.filter(ActivityLog.action.contains(action_filter.strip()))
+    if action_choice != "Semua":
+        q = q.filter(ActivityLog.action == action_choice)
     if user_filter.strip():
         q = q.filter(ActivityLog.user_name.contains(user_filter.strip()))
     if date_filter:
