@@ -8,6 +8,7 @@ import bcrypt
 import enum
 
 DB_URL = os.environ.get("DATABASE_URL", "").strip()
+DB_PATH = None  # always defined; only set when using SQLite
 if not DB_URL:
     DB_PATH = os.path.join(os.path.dirname(__file__), "data", "strawberry.db")
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)

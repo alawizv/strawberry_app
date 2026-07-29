@@ -11,4 +11,4 @@ COPY . .
 
 EXPOSE 3000
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=3000", "--server.address=0.0.0.0", "--server.headless=true"]
+ENTRYPOINT ["streamlit", "run", "Dashboard.py", "--server.port=3000", "--server.address=0.0.0.0", "--server.headless=true"]
