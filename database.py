@@ -94,6 +94,7 @@ class Receiving(Base):
     check_date = Column(DateTime, default=datetime.utcnow)
     notes = Column(Text)
     is_balanced = Column(Boolean, default=False)
+    photo_path = Column(String(300))
     created_at = Column(DateTime, default=datetime.utcnow)
     pickup = relationship("Pickup", back_populates="receiving")
     sorting_details = relationship("SortingDetail", back_populates="receiving", cascade="all, delete-orphan")

@@ -4,3 +4,7 @@ bcrypt>=4.0.0
 pandas>=2.0.0
 pillow>=10.0.0
 python-multipart
+qrcode[pil]>=7.0
+reportlab>=4.0
+psycopg2-binary>=2.9.0
+openpyxl>=3.1.0
